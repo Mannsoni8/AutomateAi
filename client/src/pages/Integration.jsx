@@ -1,4 +1,12 @@
-import { ArrowLeft, CalendarDays, Check, Mail, Workflow } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  CalendarDays,
+  Check,
+  Mail,
+  Unplug,
+  Workflow,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { FaInstagram } from "react-icons/fa";
 import {
@@ -17,6 +25,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 const integrationList = [
   {
@@ -27,8 +36,8 @@ const integrationList = [
     provider: "google",
   },
   {
-    id: "googleCalendar",
-    name: "Google Calendar",
+    id: "google_calender",
+    name: "Google Calender",
     description: "Manage calendar events using your AI agent.",
     icon: CalendarDays,
     provider: "google",
@@ -54,7 +63,7 @@ const Integration = () => {
     setError("");
     setSuccess("");
 
-    if (id === "google" || id === "googleCalendar") {
+    if (id === "gmail" || id === "google_calender") {
       const data = await connectGoogle();
       if (!data.url) {
         throw new Error("Google authorization URL not recived.");
@@ -93,7 +102,7 @@ const Integration = () => {
       return;
     }
 
-    if (id === "google" || id === "googleCalendar") {
+    if (id === "gmail" || id === "google_calender") {
       const data = await disconnectGoogle();
       setSuccess("Disconnected successfully");
       setDisconnecting(null);
@@ -124,7 +133,7 @@ const Integration = () => {
 
   useEffect(() => {
     fetchAllIntegrations();
-  }, []);
+  }, [connecting,disconnecting]);
 
   return (
     <div className="relative min-h-screen bg-[radial-gradient(ellipse_80%_50%_at_50%_0%,#2b2f3a_0%,#191b21_55%,#121317_100%)] text-white">
@@ -220,6 +229,30 @@ const Integration = () => {
                           </p>
                         )}
                       </div>
+                    </div>
+
+                    <div className="flex shrink-0 gap-2">
+                      {connected ? (
+                        <Button
+                          variant="outline"
+                          disabled={isDisconnecting}
+                          onClick={() => handelDisconnect(item.id)}
+                          className="rounded-xl border-red-400/20 bg-red-400/[0.06] text-red-300 hover:bg-red-400/10 hover:text-red-200">
+                          <Unplug className="mr-2 h-4 w-4" />
+                          {isDisconnecting ? "Disconnecting..." : "Disconnect"}
+                        </Button>
+                      ) : (
+                        <Button
+                          disabled={isConnecting}
+                          onClick={() => handelConnect(item.id)}
+                          className="rounded-xl border-0 bg-white text-zinc-900 hover:bg-zinc-200 hover:text-zinc-900">
+                          {isConnecting ? "Connecting..." : "Connect"}
+
+                          {isConnecting && (
+                            <ArrowUpRight className="ml-2 h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

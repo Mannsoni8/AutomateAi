@@ -11,11 +11,7 @@ export const connectGoogleController = async (req, res) => {
     const userId = req.user._id;
     const state = jwt.sign(
       {
-        userId: String(
-          useImperativeHandle(first, () => {
-            second;
-          }, [third]),
-        ),
+        userId: String(userId),
         purpose: "google-oauth",
       },
       config.JWT_SECRET,
@@ -59,8 +55,19 @@ export const googleCallbackController = async (req, res) => {
       });
     }
 
-    const { tokens } = googleOauthClient.getToken(code);
+    const { tokens } = await googleOauthClient.getToken(code);
+
+    console.log("2. Tokens received:", Boolean(tokens?.access_token));
+
+    if (!tokens?.access_token) {
+      return res.status(400).json({
+        success: false,
+        message: "Google access token not received",
+      });
+    }
+
     googleOauthClient.setCredentials(tokens);
+    console.log("3. Credentials set");
 
     const oauth2 = google.oauth2({
       version: "v2",
@@ -68,6 +75,7 @@ export const googleCallbackController = async (req, res) => {
     });
 
     const { data: profile } = await oauth2.userinfo.get();
+    console.log("4. Profile received:", Boolean(profile?.id));
 
     if (!profile.id || !profile.email) {
       return res.status(400).json({
@@ -85,6 +93,8 @@ export const googleCallbackController = async (req, res) => {
       .findOne(filter)
       .select("+tokens.accessToken +tokens.refreshToken");
 
+    console.log("5. Database query completed");
+
     if (!connection) {
       connection = new integrationModel({
         ...filter,
@@ -94,9 +104,7 @@ export const googleCallbackController = async (req, res) => {
     }
 
     connection.services = [
-      ...new Set([...integrationModel(connection.services || [])]),
-      "gmail",
-      "google_calender",
+      ...new Set([...(connection.services || []), "gmail", "google_calender"]),
     ];
 
     connection.account = {
@@ -107,26 +115,40 @@ export const googleCallbackController = async (req, res) => {
 
     connection.scopes = tokens.scope ? tokens.scope.split(" ") : scopes;
 
+    // Encrypt and store access token
     if (tokens.access_token) {
-      connection.tokens.accessToken = encrypt(tokens.access_token);
+      connection.tokens.accessToken = await encrypt(tokens.access_token);
     }
 
+    // Encrypt and store refresh token
     if (tokens.refresh_token) {
-      connection.tokens.refreshToken = encrypt(tokens.refresh_token);
+      connection.tokens.refreshToken = await encrypt(tokens.refresh_token);
     }
 
+    // Store expiry date
     if (tokens.expiry_date) {
       connection.tokens.expiresAt = new Date(tokens.expiry_date);
     }
 
+    // Update connection status
     connection.status = "connected";
     connection.connectedAt = new Date();
+
+    // Save to MongoDB
     await connection.save();
+
+    console.log("6. Integration saved successfully");
 
     return res.redirect(`${config.FRONTED_URL}/integrations?google=connected`);
   } catch (error) {
+    console.error("GOOGLE CALLBACK ERROR:", error);
+    console.error("ERROR MESSAGE:", error.message);
+    console.error("GOOGLE API ERROR:", error.response?.data);
+    console.error("ERROR STACK:", error.stack);
+
     return res.status(500).json({
-      message: `Google callback error ${error}`,
+      success: false,
+      message: "Google connection failed",
     });
   }
 };
@@ -161,7 +183,7 @@ export const connectInstagramController = async (req, res) => {
       override_default_response_type: "true",
       response_type: "code",
       state,
-      prompt: "login,",
+      prompt: "login",
     });
 
     const url = `https://www.facebook.com/dialog/oauth?${params.toString()}`;
@@ -177,7 +199,6 @@ export const connectInstagramController = async (req, res) => {
     });
   }
 };
-
 export const instagramCallbackController = async (req, res) => {
   try {
     const { code, state, error } = req.query;
@@ -218,22 +239,24 @@ export const instagramCallbackController = async (req, res) => {
         timeout: 15000,
       },
     );
-    const instagramAccount = assignedAccounts.data.data;
+    const instagramAccounts = assignedAccounts.data.data;
 
-    if (
-      !instagramAccount ||
-      !instagramAccount.id ||
-      !instagramAccount.username ||
-      instagramAccount.length === 0
-    ) {
+    if (!Array.isArray(instagramAccounts) || instagramAccounts.length === 0) {
       return res.redirect(
-        `${config.FRONTED_URL}/integrations?instagram=failed`,
+        `${config.FRONTED_URL}/integration?instagram=failed`,
       );
     }
-    const dynamicAccountId = instagramAccount[0];
+
+    const dynamicAccount = instagramAccounts[0];
+
+    if (!dynamicAccount?.id || !dynamicAccount?.username) {
+      return res.redirect(
+        `${config.FRONTED_URL}/integration?instagram=failed`,
+      );
+    }
 
     const profile = await axios.get(
-      `https://graph.facebook.com/${INSTAGRAM_GRAPH_VERSION}/${dynamicAccountId.id}`,
+      `https://graph.facebook.com/${INSTAGRAM_GRAPH_VERSION}/${dynamicAccount.id}`,
       {
         params: {
           fields: "id,username,name",
@@ -243,10 +266,12 @@ export const instagramCallbackController = async (req, res) => {
       },
     );
 
+    const profileData = profile.data || {};
+
     const filter = {
       userId: decoded.userId,
       provider: "instagram",
-      providerAccountId: profile.id,
+      providerAccountId: profileData.id || dynamicAccount.id,
     };
 
     let connection = await integrationModel
@@ -262,31 +287,32 @@ export const instagramCallbackController = async (req, res) => {
     }
 
     connection.services = [
-      ...new Set([...integrationModel(connection.services || [])]),
+      ...new Set([...(connection.services || [])]),
       "instagram",
     ];
 
     connection.account = {
       ...connection.account?.toObject?.(),
-      email: profile.email,
-      display: profile.name || profile.username,
+      id: profileData.id || dynamicAccount.id,
+      username: profileData.username || dynamicAccount.username,
+      displayname: profileData.name || profileData.username || dynamicAccount.username,
+      display: profileData.name || profileData.username || dynamicAccount.username,
+      email: profileData.email || null,
     };
 
     connection.scopes = INSTAGRAM_SCOPES;
 
-    if (tokens.access_token) {
-      connection.tokens.accessToken = encrypt(userAccessToken);
+    if (userAccessToken) {
+      connection.tokens.accessToken = await encrypt(userAccessToken);
     }
 
-    if (tokens.expiry_date) {
-      connection.tokens.expiresAt = null;
-    }
+    connection.tokens.expiresAt = null;
 
     connection.status = "connected";
     connection.connectedAt = new Date();
     await connection.save();
 
-    return res.redirect(`${config.FRONTED_URL}/instagram?instagram=connected`);
+    return res.redirect(`${config.FRONTED_URL}/integration?instagram=connected`);
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -338,7 +364,42 @@ export const getIntegrationsController = async (req, res) => {
 export const disconnectIntegrationController = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { provider } = req.params;
+    const providerParam =
+      req.params.provider ||
+      (req.path.includes("instagram")
+        ? "instagram"
+        : req.path.includes("google")
+          ? "google"
+          : null);
+
+    if (!providerParam) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid integration provider",
+      });
+    }
+
+    if (providerParam === "google") {
+      await integrationModel.deleteMany({
+        userId,
+        provider: "google",
+      });
+      return res.status(200).json({
+        success: true,
+        message: "Google disconnected successfully",
+      });
+    }
+
+    if (providerParam === "instagram") {
+      await integrationModel.deleteMany({
+        userId,
+        provider: "instagram",
+      });
+      return res.status(200).json({
+        success: true,
+        message: "Instagram disconnected successfully",
+      });
+    }
 
     const serviceMapping = {
       gmail: {
@@ -355,7 +416,7 @@ export const disconnectIntegrationController = async (req, res) => {
       },
     };
 
-    const integration = serviceMapping[provider];
+    const integration = serviceMapping[providerParam];
 
     if (!integration) {
       return res.status(400).json({
@@ -373,13 +434,13 @@ export const disconnectIntegrationController = async (req, res) => {
     if (!connection) {
       return res.status(404).json({
         success: false,
-        message: `${provider} connection not found`,
+        message: `${providerParam} connection not found`,
       });
     }
 
     // Remove only the requested service
     connection.services = connection.services.filter(
-      (service) => service !== integration.service
+      (service) => service !== integration.service,
     );
 
     // Delete document if no services remain
@@ -394,9 +455,8 @@ export const disconnectIntegrationController = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `${provider} disconnected successfully`,
+      message: `${providerParam} disconnected successfully`,
     });
-
   } catch (error) {
     console.error("Disconnect integration error:", error);
 

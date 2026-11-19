@@ -10,12 +10,12 @@ const integrationSchema = new mongoose.Schema(
     provider: {
       type: String,
       required: true,
-      enums: ["google", "instragram"],
+      enum: ["google", "instagram"],
     },
     services: [
       {
         type: String,
-        enums: ["google", "google_calender", "instragram"],
+        enum: ["google", "gmail", "google_calender", "instagram"],
       },
     ],
     providerAccountId: {
@@ -33,6 +33,10 @@ const integrationSchema = new mongoose.Schema(
         trim: true,
       },
       displayname: {
+        type: String,
+        trim: true,
+      },
+      display: {
         type: String,
         trim: true,
       },

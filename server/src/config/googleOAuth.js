@@ -9,11 +9,11 @@ export const googleOauthClient = new google.auth.OAuth2(
 
 // generate a url that asks permissions for Blogger and Google Calendar scopes
 export const scopes = [
-  "opeanid",
-  "gmail",
+  "openid",
+  "email",
   "profile",
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.readonly",
-  "https://www.googleapis.com/auth/gamil.send",
+  "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/gmail.readonly",
 ];
