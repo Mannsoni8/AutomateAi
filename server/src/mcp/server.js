@@ -6,11 +6,26 @@ import {
 import { z } from "zod";
 import { TavilySearch } from "@langchain/tavily";
 import { config } from "../config/env.js";
+import jwt from "jsonwebtoken";
+import { connectDB } from "../config/db.js";
 
 const server = new McpServer({
   name: "automate-ai-mcp-server",
   version: "1.0.0",
 });
+
+const verifyAuthToken = async (token) => {
+  const payload = jwt.verify(token, config.MCP_AUTH_SECRET, {
+    algorithms: ["HS256"],
+    issuer: "Automate-Backend",
+    audience: "automate-mcp",
+  });
+  return payload.sub
+};
+
+const getGoogleOauthClient= (userId,requiredService) => {
+  connectDB()
+} 
 
 const tavilySearch = new TavilySearch({
   maxResults: 5,
@@ -37,6 +52,35 @@ server.registerTool(
           },
         ],
       };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "web search failed",
+          },
+        ],
+      };
+    }
+  },
+);
+
+server.registerTool(
+  "send_email",
+  {
+    description:
+      "Send an email through the authenticated user's connected Gmail account. Only execute after explicit user approval.",
+    inputSchema: z.object({
+      to: z.string().email(),
+      subject: z.string().trim().min(1).max(200),
+      body: z.string().trim().min(1).max(2000),
+    }),
+  },
+  async ({ authToken, to, subject, body }) => {
+    try {
+      const userId = verifyAuthToken(authToken)
+
+
     } catch (error) {
       return {
         content: [

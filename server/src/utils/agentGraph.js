@@ -13,6 +13,7 @@ import { SystemMessage } from "@langchain/core/messages";
 import { getMcpTools } from "../mcp/langgrap-mcp.js";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import z from "zod";
+import jwt from "jsonwebtoken"
 
 const llm = new ChatGroq({
   model: config.GROQ_MODEL || "openai/gpt-oss-120b",
@@ -31,6 +32,17 @@ const findTool = (tools, names) => {
     names?.some((name) => tool.name?.toLowerCase().includes(name.toLowerCase())),
   );
 };
+
+const makeAuthToken = async (userId) => {
+  return jwt.sign({},config.MCP_AUTH_SECRET,{
+    algorithm:"HS256",
+    subject:String(userId),
+    expiresIn:"2m",
+    issuer:"Automate-Backend",
+    audience:"automate-mcp"
+  })
+}
+
 
 const limitMessageContext = (message, maxChar = 4000) => {
   if (!message || typeof message.content !== "string") {
