@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarDays, Mail, Workflow } from "lucide-react";
+import { ArrowLeft, CalendarDays, Check, Mail, Workflow } from "lucide-react";
 import { Link } from "react-router-dom";
 import { FaInstagram } from "react-icons/fa";
 import {
@@ -10,6 +10,13 @@ import {
 } from "@/features/integration";
 import { useEffect, useState } from "react";
 import { Separator } from "@base-ui/react/separator";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 const integrationList = [
   {
@@ -39,8 +46,8 @@ const Integration = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [connecting, setConnecting] = useState(null);
-  const [diconnecting, setDiconnecting] = useState(null);
-  const [integrations, setIntegrations] = useState(null);
+  const [disconnecting, setDisconnecting] = useState(null);
+  const [integrations, setIntegrations] = useState({});
 
   const handelConnect = async (id) => {
     setConnecting(id);
@@ -75,7 +82,7 @@ const Integration = () => {
   };
 
   const handelDisconnect = async (id) => {
-    setDiconnecting(true);
+    setDisconnecting(id);
     setError("");
     setSuccess("");
 
@@ -89,17 +96,30 @@ const Integration = () => {
     if (id === "google" || id === "googleCalendar") {
       const data = await disconnectGoogle();
       setSuccess("Disconnected successfully");
+      setDisconnecting(null);
     }
 
     if (id === "instagram") {
       const data = await disconnectInstagram();
       setSuccess("Disconnected successfully");
+      setDisconnecting(null);
     }
   };
 
   const fetchAllIntegrations = async () => {
-    const data = await getAllIntegrations();
-    setIntegrations(data.integrations);
+    try {
+      const response = await getAllIntegrations();
+
+      console.log("Integrations response:", response);
+
+      setIntegrations(response.data ?? {});
+    } catch (error) {
+      console.error("Failed to fetch integrations:", error);
+
+      setError(error.response?.data?.message || "Failed to load integrations");
+
+      setIntegrations({});
+    }
   };
 
   useEffect(() => {
@@ -157,8 +177,53 @@ const Integration = () => {
 
           <div className="space-y-4">
             {integrationList.map((item) => {
-              const integration = integrations[item.id];
+              const integration = integrations[item?.id];
               const connected = Boolean(integration?.connected);
+              const Icon = item?.icon;
+              const isConnecting = connecting == item?.id;
+              const isDisconnecting = disconnecting == item?.id;
+
+              return (
+                <Card
+                  key={item.id}
+                  className="rounded-2xl border border-white/10 bg-white/[0.04] text-white shadow-[0_20px_60px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition hover:border-white/25 hover:bg-white/[0.06]">
+                  <CardContent className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-zinc-900 shadow-[0_8px_24px_rgba(255,255,255,0.1)]">
+                        <Icon className="h-5 w-5" />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="font-medium text-white">
+                            {item.name}
+                          </h2>
+                          {connecting && connected && (
+                            <Badge
+                              variant="secondary"
+                              className="gap-1 border border-emerald-400/20 bg-emerald-400/10 font-normal text-emerald-300">
+                              <Check className="h-3 w-3" />
+                              Connected
+                            </Badge>
+                          )}
+                        </div>
+                        <CardTitle className="sr-only">{item.name}</CardTitle>
+                        <CardDescription className="max-w-md leading-relaxed text-zinc-500">
+                          {item.description}
+                        </CardDescription>
+                        {connected && (
+                          <p className="pt-1 text-xs text-zinc-500">
+                            {integration.email ||
+                              integration.username ||
+                              integration.displayName ||
+                              ""}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
             })}
           </div>
         </div>
