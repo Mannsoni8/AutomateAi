@@ -19,7 +19,7 @@ export const createAgent = async ({
       "Error in create agent API:",
       error.response?.data || error.message,
     );
-    return error;
+    throw error;
   }
 };
 

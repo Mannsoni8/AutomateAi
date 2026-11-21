@@ -23,7 +23,7 @@ const agentSchema = new mongoose.Schema(
     tools: [
       {
         type: String,
-        trime: true,
+        trim: true,
       },
     ],
     isActive: {

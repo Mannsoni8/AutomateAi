@@ -63,30 +63,38 @@ const Integration = () => {
     setError("");
     setSuccess("");
 
-    if (id === "gmail" || id === "google_calender") {
-      const data = await connectGoogle();
-      if (!data.url) {
-        throw new Error("Google authorization URL not recived.");
+    try {
+      if (id === "gmail" || id === "google_calender") {
+        const data = await connectGoogle();
+        if (!data?.url) {
+          throw new Error(data?.message || "Google authorization URL not received.");
+        }
+        if (data.success === false) {
+          setError(data.message || "Unable to connect integration");
+          setConnecting(null);
+          return;
+        }
+        window.location.assign(data.url);
+        return;
       }
-      if (!data.success) {
-        setError(data.response.data.message || "Unable to connect integration");
-        setConnecting(null);
-      }
-      window.location.assign(data.url);
-      return;
-    }
 
-    if (id === "instagram") {
-      const data = await connectInstagram();
-      if (!data.url) {
-        throw new Error("Instagram authorization URL not recived.");
+      if (id === "instagram") {
+        const data = await connectInstagram();
+        if (!data?.url) {
+          throw new Error(data?.message || "Instagram authorization URL not received.");
+        }
+        if (data.success === false) {
+          setError(data.message || "Unable to connect integration");
+          setConnecting(null);
+          return;
+        }
+        window.location.assign(data.url);
+        return;
       }
-      if (!data.success) {
-        setError(data.response.data.message || "Unable to connect integration");
-        setConnecting(null);
-      }
-      window.location.assign(data.url);
-      return;
+    } catch (err) {
+      console.error("Connect error:", err);
+      setError(err?.response?.data?.message || err?.message || "Unable to connect integration");
+      setConnecting(null);
     }
   };
 
@@ -99,18 +107,24 @@ const Integration = () => {
       `Are you sure you want to disconnect ${id}`,
     );
     if (!confirmed) {
+      setDisconnecting(null);
       return;
     }
 
-    if (id === "gmail" || id === "google_calender") {
-      const data = await disconnectGoogle();
-      setSuccess("Disconnected successfully");
-      setDisconnecting(null);
-    }
+    try {
+      if (id === "gmail" || id === "google_calender") {
+        await disconnectGoogle();
+        setSuccess("Disconnected successfully");
+      }
 
-    if (id === "instagram") {
-      const data = await disconnectInstagram();
-      setSuccess("Disconnected successfully");
+      if (id === "instagram") {
+        await disconnectInstagram();
+        setSuccess("Disconnected successfully");
+      }
+    } catch (err) {
+      console.error("Disconnect error:", err);
+      setError(err?.response?.data?.message || err?.message || "Failed to disconnect integration");
+    } finally {
       setDisconnecting(null);
     }
   };
@@ -180,7 +194,7 @@ const Integration = () => {
           )}
           {success && (
             <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.08] p-4">
-              <p className="text-sm text-emerald-300">{error}</p>
+              <p className="text-sm text-emerald-300">{success}</p>
             </div>
           )}
 
@@ -207,7 +221,7 @@ const Integration = () => {
                           <h2 className="font-medium text-white">
                             {item.name}
                           </h2>
-                          {connecting && connected && (
+                          {connected && (
                             <Badge
                               variant="secondary"
                               className="gap-1 border border-emerald-400/20 bg-emerald-400/10 font-normal text-emerald-300">

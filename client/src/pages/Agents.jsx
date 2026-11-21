@@ -1,7 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { deleteAgent, getAllAgents } from "@/features/agent";
-import { setAgents, setagentsLoading, setDelete } from "@/redux/agentSlice";
+import {
+  setAgents,
+  setagentsLoading,
+  setDelete,
+  setSelectedAgent,
+} from "@/redux/agentSlice";
 import {
   ArrowLeft,
   Bot,
@@ -173,6 +178,7 @@ const Agents = () => {
 
                       <Button
                         nativeButton={false}
+                        onClick={() => dispatch(setSelectedAgent(agent.name))}
                         render={
                           <Link
                             to="/"

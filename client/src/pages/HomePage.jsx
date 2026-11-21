@@ -373,6 +373,17 @@ const HomePage = () => {
                           Active Agent
                         </div>
                         <DropdownMenuSeparator className={menuSeparator} />
+                        {selectedAgent && (
+                          <>
+                            <DropdownMenuItem
+                              onClick={() => dispatch(setSelectedAgent(""))}
+                              className="cursor-pointer gap-2 py-2 text-xs text-zinc-400 hover:text-white">
+                              <Workflow size={14} />
+                              <span>Default Assistant</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator className={menuSeparator} />
+                          </>
+                        )}
                         {agents && agents.length > 0 ? (
                           agents.map((agent) => (
                             <DropdownMenuItem

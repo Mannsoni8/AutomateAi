@@ -146,7 +146,7 @@ const CreateAgent = () => {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   maxLength={100}
-                  className={`h-11${fieldCls}`}
+                  className={`h-11 ${fieldCls}`}
                 />
               </div>
               <div className="mt-5">
@@ -162,7 +162,7 @@ const CreateAgent = () => {
                   value={instructions}
                   onChange={(e) => setInstructions(e.target.value)}
                   maxLength={100}
-                  className={`h-11${fieldCls}`}
+                  className={`h-11 ${fieldCls}`}
                 />
               </div>
               <div className="mt-5">
@@ -178,7 +178,7 @@ const CreateAgent = () => {
                   value={knowledgeBase}
                   onChange={(e) => setKnowledgeBase(e.target.value)}
                   maxLength={100}
-                  className={`min-h-40 resize-y leading-6${fieldCls}`}
+                  className={`min-h-40 resize-y leading-6 ${fieldCls}`}
                 />
               </div>
             </section>
@@ -286,7 +286,7 @@ const CreateAgent = () => {
                 type="button"
                 variant="ghost"
                 className="rounded-xl text-xs text-zinc-400 hover:bg-white/10 hover:text-white">
-                Cancle
+                Cancel
               </Button>
 
               <Button

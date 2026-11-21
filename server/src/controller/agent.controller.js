@@ -64,8 +64,16 @@ export const getAgentByIdController = async (req, res) => {
 export const deleteAgentController = async (req, res) => {
   try {
     const agentId = req.params.id;
+    const userId = req.user?._id;
 
-    const agent = await agentModel.findByIdAndDelete(agentId);
+    const agent = await agentModel.findOneAndDelete({
+      _id: agentId,
+      userId,
+    });
+
+    if (!agent) {
+      return res.status(404).json({ message: "Agent not found" });
+    }
 
     return res.status(200).json(agent);
   } catch (error) {
