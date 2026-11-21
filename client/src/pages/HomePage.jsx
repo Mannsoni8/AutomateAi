@@ -341,7 +341,7 @@ const HomePage = () => {
                   className={`min-h-[56px] max-h-48 w-full resize-none border-0 bg-transparent px-2 py-1 text-sm text-white shadow-none placeholder:text-zinc-500 focus-visible:ring-0 focus-visible:outline-none ${hideScrollbar}`}
                 />
 
-                <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/[0.06]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <Button
                       type="button"
@@ -358,7 +358,7 @@ const HomePage = () => {
                           <Button
                             type="button"
                             variant="ghost"
-                            className="h-8 max-w-56 gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-2.5 text-xs text-zinc-300 transition hover:bg-white/10 hover:text-white"
+                            className="h-8 min-w-0 max-w-[min(14rem,calc(100vw-7rem))] gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-2.5 text-xs text-zinc-300 transition hover:bg-white/10 hover:text-white"
                           />
                         }>
                         <Bot size={15} className="shrink-0 text-violet-300" />
@@ -437,3 +437,4 @@ const HomePage = () => {
 };
 
 export default HomePage;
+

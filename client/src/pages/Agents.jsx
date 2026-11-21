@@ -96,7 +96,7 @@ const Agents = () => {
           </Link>
         </header>
 
-        <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+        <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-14">
           <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
             <div>
               <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-violet-300/80">
@@ -126,7 +126,7 @@ const Agents = () => {
             </Button>
           </div>
           <div>
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-9 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="relative w-full sm:max-w-sm">
                 <Search
                   size={17}
@@ -223,3 +223,4 @@ const Agents = () => {
 };
 
 export default Agents;
+

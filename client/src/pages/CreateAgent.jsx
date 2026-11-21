@@ -117,7 +117,7 @@ const CreateAgent = () => {
             <span>Back to chat</span>
           </Link>
         </header>
-        <main className="mx-auto w-full max-w-2xl px-5 pb-12 pt-10 sm:px-8 sm:pt-14">
+        <main className="mx-auto w-full max-w-2xl px-4 pb-12 pt-8 sm:px-8 sm:pt-14">
           <div className="mb-9">
             <div className="mb-5 grid size-12 place-items-center rounded-2xl bg-white text-zinc-900 shadow-[0_10px_40px_rgba(255,255,255,0.12)]">
               <Bot size={24} />
@@ -280,7 +280,7 @@ const CreateAgent = () => {
                 {error}
               </p>
             )}
-            <div className="flex items-center justify-between gap-3 border-t border-white/[0.08] pt-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.08] pt-5">
               <Button
                 onClick={() => navigate("/")}
                 type="button"
@@ -305,3 +305,4 @@ const CreateAgent = () => {
 };
 
 export default CreateAgent;
+
