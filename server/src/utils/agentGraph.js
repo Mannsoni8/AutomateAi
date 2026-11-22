@@ -9,12 +9,13 @@ import {
   StateGraph,
 } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { SystemMessage } from "@langchain/core/messages";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { getMcpTools } from "../mcp/langgrap-mcp.js";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import z from "zod";
 import jwt from "jsonwebtoken";
 import { invokeWithRateLimitRetry } from "./retry.js";
+import { ChatGoogle } from "@langchain/google";
 
 const llm = new ChatGroq({
   model: config.GROQ_MODEL || "openai/gpt-oss-120b",
@@ -44,6 +45,47 @@ const makeAuthToken = (userId) => {
     issuer: "Automate-Backend",
     audience: "automate-mcp",
   });
+};
+
+const generateCaption = async (imageUrl) => {
+  try {
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      throw new Error(`Faild to fetch image. Status:${imageResponse.status}`);
+    }
+
+    const arrayBuffer = await imageResponse.arrayBuffer();
+    const base64image = Buffer.from(arrayBuffer).toString("base64");
+
+    const contentType = imageResponse.headers.get("content-type");
+
+    const imageAnalyzer = new ChatGoogle({
+      model: "gemini-2.5-flash",
+      temperature: 0,
+      maxTokens: undefined,
+      maxRetries: 2,
+      // other params...
+    });
+
+    const message = new HumanMessage({
+      content: [
+        {
+          type: "text",
+          text: `Analyze this image and generate a catchy social media caption with releant hashtags. STRICT RULE: Do not include any greetings, introductory text, explanations, or concersational filler (like 'Sure, here is...' ,'Here is a caption'). Output ONLY the caption and hashtags`,
+        },
+        {
+          type: "image_url",
+          image_url: `data:${contentType}; base,${base64image}`,
+        },
+      ],
+    });
+    const response = await imageAnalyzer.invoke([message]);
+
+    return response.content.trim();
+  } catch (error) {
+    console.log(error);
+    return error;
+  }
 };
 
 const limitMessageContext = (message, maxChar = 2000) => {
@@ -93,13 +135,13 @@ export const createAgentGraph = async (agent, userId) => {
     "autoMate_list_calendar_event",
   ]);
 
-    const listEmailsMcpTool = findTool(mcpTools, [
-    "list_emails",
-    "autoMate_list_emails",
+  const publishOnInstagramMcpTool = findTool(mcpTools, [
+    "publish_instagram_post",
+    "autoMate_publish_instagram_post",
   ]);
 
   const finalTools = [];
-  
+
   if (webSearchMcpTool) {
     finalTools.push(
       new DynamicStructuredTool({
@@ -326,6 +368,74 @@ Date and time rules:
     );
   }
 
+  if (publishOnInstagramMcpTool) {
+    finalTools.push(
+      new DynamicStructuredTool({
+        name: "publish_instagram_post",
+        description: `
+Publish an image to the authenticated user's connected Instagram account.
+
+Use this tool ONLY when the user explicitly requests an Instagram
+post or asks to publish an image to Instagram.
+
+Examples:
+- Post this image on Instagram.
+- Upload this image to my Instagram.
+- Publish this image with a caption.
+
+Do NOT use this tool when:
+- The user only uploads an image.
+- The user asks what an image contains.
+- The user asks to explain or analyze an image.
+- The user asks to describe an image.
+
+Requirements:
+- imageUrl must be a public HTTPS URL.
+- Generate a caption if one is not provided.
+- The application requires explicit user approval before publishing.
+- Never claim success unless publishing is confirmed.
+`,
+        schema: z.object({
+          imageUrl: z
+            .string()
+            .url()
+            .refine((url) => url.startsWith("https://"))
+            .describe("Public HTTPS image URL from Cloudinary"),
+          caption: z
+            .string()
+            .trim()
+            .max(2200)
+            .optional()
+            .describe("Optional Instagram caption"),
+        }),
+
+        func: async ({ imageUrl, caption }) => {
+          try {
+            const authToken = makeAuthToken(userId);
+
+            let finalCaption = "";
+
+            if (!caption) {
+              finalCaption = await generateCaption(imageUrl);
+            } else {
+              finalCaption = caption;
+            }
+
+            const result = await publishOnInstagramMcpTool.invoke({
+              authToken,
+              imageUrl,
+              caption: finalCaption,
+            });
+            return result;
+          } catch (error) {
+            console.error("❌ MCP publish_instagram_post Error: ", error);
+            return "Publish instagram post Events failed";
+          }
+        },
+      }),
+    );
+  }
+
   const llmWithTools = finalTools.length > 0 ? llm.bindTools(finalTools) : llm;
 
   const currentDateTime = new Intl.DateTimeFormat("en-IN", {
@@ -359,10 +469,7 @@ Context & Rules:
       .map((message) => limitMessageContext(message));
 
     const response = await invokeWithRateLimitRetry(() =>
-      llmWithTools.invoke([
-        new SystemMessage(systemPrompt),
-        ...recentMessages,
-      ]),
+      llmWithTools.invoke([new SystemMessage(systemPrompt), ...recentMessages]),
     );
 
     return {

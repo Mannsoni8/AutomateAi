@@ -6,6 +6,7 @@ import {
   LogOut,
   Plus,
   Settings2,
+  Trash2,
   UserRound,
   Workflow,
 } from "lucide-react";
@@ -46,6 +47,11 @@ const HomePage = () => {
   const [chatLoading, setChatLoading] = useState(false);
   const [messages, setMessages] = useState([]);
 
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [uploadedImage, setUploadedImage] = useState(null);
+  const [imageUploading, setImageUploading] = useState(false);
+
   const { userData } = useSelector((state) => state.user || {});
   const { agents = [], selectedAgent } = useSelector(
     (state) => state.agent || {},
@@ -53,6 +59,8 @@ const HomePage = () => {
 
   const dispatch = useDispatch();
   const messagesEndRef = useRef(null);
+
+  const fileinputRef = useRef(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -70,6 +78,90 @@ const HomePage = () => {
     }
   };
 
+  const handerSelectImage = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Please select a valid image.",
+        },
+      ]);
+      return;
+    }
+
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setSelectedImage(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const clearSelectedImage = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setSelectedImage(null);
+    setImagePreview("");
+    setUploadedImage(null);
+    if (fileinputRef.current) fileinputRef.current.value = "";
+  };
+
+  const uploadToCloudinary = async () => {
+    if (uploadedImage?.secure_url) return uploadedImage;
+
+    if (!selectedImage) return null;
+
+    const cloudinaryCloundName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+
+    const cloudinaryUploadPreset = import.meta.env
+      .VITE_CLOUDINARY_UPLOAD_PRESET;
+
+    if (!cloudinaryCloundName || !cloudinaryUploadPreset) {
+      throw new Error(
+        "Cloudinary config missing. Set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET in frontend .env",
+      );
+    }
+    setImageUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedImage);
+      formData.append("upload_preset", cloudinaryUploadPreset);
+      formData.append("folder", "automate-ai/instagram");
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudinaryCloundName}/image/upload`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+
+      const data = await response.json();
+      if (!response.ok || !data?.secure_url) {
+        throw new Error(
+          data?.error?.message || "Cloudinary image upload faild.",
+        );
+      }
+
+      const image = {
+        secure_url: data.secure_url,
+        public_id: data.public_id,
+        width: data.width,
+        height: data.height,
+        format: data.format,
+      };
+
+      setUploadedImage(image);
+      setImageUploading(false);
+      return image;
+    } catch (error) {
+      setImageUploading(false);
+      console.log(error);
+    }
+  };
+
   const handleSend = async (e) => {
     e?.preventDefault();
 
@@ -79,11 +171,25 @@ const HomePage = () => {
 
     setInput("");
 
+    let image = uploadedImage;
+
+    if (selectedImage && !image?.secure_url) {
+      image = await uploadToCloudinary();
+    }
+
+    let finalMessage = messages;
+    if (image?.secure_url) {
+      finalMessage += `\n\nImage URL: ${image.secure_url}`;
+
+      finalMessage += `\nImage public ID: ${image.public_id || ""}`;
+    }
+
     setMessages((prev) => [
       ...prev,
       {
         role: "user",
-        content: messageContent,
+        content: finalMessage,
+        image_url: image.secure_url,
       },
     ]);
 
@@ -92,7 +198,7 @@ const HomePage = () => {
     try {
       // If an agent is selected, use agentChat
       if (selectedAgent) {
-        const response = await agentChat(messageContent, selectedAgent);
+        const response = await agentChat(finalMessage, selectedAgent);
 
         const text =
           typeof response === "string"
@@ -111,7 +217,7 @@ const HomePage = () => {
       }
 
       // Otherwise, use normal chat
-      const response = await chat(messageContent);
+      const response = await chat(finalMessage);
 
       const text =
         typeof response === "string"
@@ -335,6 +441,36 @@ const HomePage = () => {
               <form
                 onSubmit={handleSend}
                 className={`mx-auto w-full max-w-3xl rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-[0_20px_60px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl transition-all focus-within:border-white/20`}>
+                {imagePreview && (
+                  <div className="mb-3 flex items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-2.5">
+                    <img
+                      src={imagePreview}
+                      alt="Selected upload preview"
+                      className="size-20 rounded-lg object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs text-zinc-300">
+                        {selectedImage?.name}
+                      </p>
+
+                      <p className="mt-1 text-[11px] text-zinc-500">
+                        {uploadedImage
+                          ? "Uploaded to Cloudinary"
+                          : "Will upload to Cloudinary when sent"}
+                      </p>
+                      <Button
+                        type="button"
+                        varient="ghost"
+                        size="icon"
+                        arial-label="Remove image"
+                        onClick={clearSelectedImage}
+                        className="size-8 text-zinc-400 hover:text-red-400">
+                        <Trash2 size={15} />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 <Textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -344,14 +480,22 @@ const HomePage = () => {
                   className={`min-h-[56px] max-h-48 w-full resize-none border-0 bg-transparent px-2 py-1 text-sm text-white shadow-none placeholder:text-zinc-500 focus-visible:ring-0 focus-visible:outline-none ${hideScrollbar}`}
                 />
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <Button
+                      onClick={() => fileinputRef.current.click()}
                       type="button"
                       variant="ghost"
                       aria-label="Attach image"
                       title="Attach image"
                       className="size-8 rounded-xl text-zinc-400 transition hover:bg-white/10 hover:text-white">
+                      <input
+                        onChange={(e) => handerSelectImage(e)}
+                        type="file"
+                        ref={fileinputRef}
+                        accept="image/*"
+                        hidden
+                      />
                       <ImagePlus size={17} />
                     </Button>
 
@@ -440,4 +584,3 @@ const HomePage = () => {
 };
 
 export default HomePage;
-
