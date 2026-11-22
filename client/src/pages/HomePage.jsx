@@ -158,71 +158,56 @@ const HomePage = () => {
       return image;
     } catch (error) {
       setImageUploading(false);
-      console.log(error);
+      console.error("Cloudinary upload error:", error);
+      throw error;
     }
   };
 
   const handleSend = async (e) => {
     e?.preventDefault();
 
-    if (!input.trim() || chatLoading) return;
+    if ((!input.trim() && !selectedImage) || chatLoading) return;
 
     const messageContent = input.trim();
-
-    setInput("");
-
-    let image = uploadedImage;
-
-    if (selectedImage && !image?.secure_url) {
-      image = await uploadToCloudinary();
-    }
-
-    let finalMessage = messages;
-    if (image?.secure_url) {
-      finalMessage += `\n\nImage URL: ${image.secure_url}`;
-
-      finalMessage += `\nImage public ID: ${image.public_id || ""}`;
-    }
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "user",
-        content: finalMessage,
-        image_url: image.secure_url,
-      },
-    ]);
-
     setChatLoading(true);
 
     try {
-      // If an agent is selected, use agentChat
-      if (selectedAgent) {
-        const response = await agentChat(finalMessage, selectedAgent);
+      let image = uploadedImage;
 
-        const text =
-          typeof response === "string"
-            ? response
-            : response?.content || JSON.stringify(response);
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: text,
-          },
-        ]);
-
-        return;
+      if (selectedImage && !image?.secure_url) {
+        image = await uploadToCloudinary();
       }
 
-      // Otherwise, use normal chat
-      const response = await chat(finalMessage);
+      if (selectedImage && !image?.secure_url) {
+        throw new Error("Image upload failed");
+      }
+
+      const prompt = messageContent || "Describe this image in detail";
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "user",
+          content: messageContent,
+          image_url: image?.secure_url || null,
+        },
+      ]);
+
+      setInput("");
+
+      const payload = {
+        message: prompt,
+        image_url: image?.secure_url || null,
+      };
+
+      const response = selectedAgent
+        ? await agentChat(payload, selectedAgent)
+        : await chat(payload);
 
       const text =
         typeof response === "string"
           ? response
-          : response?.content || JSON.stringify(response);
+          : response?.content || response?.response || JSON.stringify(response);
 
       setMessages((prev) => [
         ...prev,
@@ -231,17 +216,19 @@ const HomePage = () => {
           content: text,
         },
       ]);
+
+      clearSelectedImage();
     } catch (error) {
       console.error("Chat error:", error);
-      const errorMessage =
-        error.response?.data?.message ||
-        "Sorry, an error occurred while processing your message.";
 
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: errorMessage,
+          content:
+            error.response?.data?.message ||
+            error.message ||
+            "Failed to process message",
         },
       ]);
     } finally {
@@ -411,7 +398,19 @@ const HomePage = () => {
                             ? "rounded-2xl rounded-tr-sm bg-gradient-to-br from-violet-600/90 to-indigo-600/90 border border-violet-400/25 text-white shadow-[0_4px_20px_rgba(109,40,217,0.25)]"
                             : `${darkPanel} rounded-2xl rounded-tl-sm text-zinc-200`
                         }`}>
-                        <p className="whitespace-pre-wrap">{message.content}</p>
+                        {message.image_url && (
+                          <img
+                            src={message.image_url}
+                            alt="Uploaded image"
+                            loading="lazy"
+                            className="mb-3 max-h-64 max-w-full rounded-xl object-contain"
+                          />
+                        )}
+                        {message.content && (
+                          <p className="whitespace-pre-wrap">
+                            {message.content}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))
@@ -567,7 +566,11 @@ const HomePage = () => {
 
                   <Button
                     type="submit"
-                    disabled={!input.trim() || chatLoading}
+                    disabled={
+                      (!input.trim() && !selectedImage) ||
+                      chatLoading ||
+                      imageUploading
+                    }
                     size="icon"
                     aria-label="Send message"
                     className="size-8 rounded-xl bg-white text-zinc-900 shadow-sm transition hover:bg-zinc-200 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none">

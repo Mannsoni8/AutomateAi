@@ -5,14 +5,27 @@ import { createAgentGraph } from "../utils/agentGraph.js";
 
 export const chatController = async (req, res) => {
   try {
-    const { message } = req.body;
-    if (!message) {
+    const { message, image_url } = req.body;
+    const text =
+      typeof message === "string"
+        ? message.trim()
+        : (message?.message || message?.content || "").trim();
+    const imageUrl = image_url || message?.image_url || null;
+
+    if (!text && !imageUrl) {
       return res.status(400).json({ message: "Message required" });
     }
+
+    const messageContent = imageUrl
+      ? (text
+          ? `${text}\n\nAttached image URL: ${imageUrl}`
+          : `Attached image URL: ${imageUrl}`)
+      : text;
+
     const threadId = req.user._id.toString();
     const data = await workFlow.invoke(
       {
-        messages: [new HumanMessage(message)],
+        messages: [new HumanMessage(messageContent)],
       },
       { configurable: { thread_id: threadId } },
     );
@@ -37,8 +50,14 @@ export const chatController = async (req, res) => {
 
 export const agentChatController = async (req, res) => {
   try {
-    const { message, agent } = req.body;
-    if (!message) {
+    const { message, agent, image_url } = req.body;
+    const text =
+      typeof message === "string"
+        ? message.trim()
+        : (message?.message || message?.content || "").trim();
+    const imageUrl = image_url || message?.image_url || null;
+
+    if (!text && !imageUrl) {
       return res.status(400).json({ message: "Message required" });
     }
     const existingAgent = await agentModel.findOne({ name: agent });
@@ -49,13 +68,19 @@ export const agentChatController = async (req, res) => {
       });
     }
 
+    const messageContent = imageUrl
+      ? (text
+          ? `${text}\n\nAttached image URL: ${imageUrl}`
+          : `Attached image URL: ${imageUrl}`)
+      : text;
+
     const threadId = `${req.user._id.toString()}:${existingAgent._id}`;
 
     const graph = await createAgentGraph(existingAgent, req.user._id);
 
     const result = await graph.invoke(
       {
-        messages: [new HumanMessage(message)],
+        messages: [new HumanMessage(messageContent)],
       },
       { configurable: { thread_id: threadId }, recursionLimit: 25 },
     );

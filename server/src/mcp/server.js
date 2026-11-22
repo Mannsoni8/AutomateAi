@@ -476,37 +476,62 @@ server.registerTool(
 
       const access_token = await decrypt(integration.tokens.accessToken);
 
-      const graphVersion = config.INSTAGRAM_GRAPH_VERSION;
+      const rawVersion = config.INSTAGRAM_GRAPH_VERSION || "v24.0";
+      const graphVersion = rawVersion.startsWith("/")
+        ? rawVersion
+        : `/${rawVersion}`;
+      const graphUrl = `https://graph.facebook.com${graphVersion}`;
 
-      const graphUrl = `https://instagram.com${graphVersion}`;
+      let finalImageUrl = imageUrl;
+
+      if (
+        finalImageUrl.includes("://cloudinary.com") &&
+        finalImageUrl.endsWith(".webp")
+      ) {
+        finalImageUrl = finalImageUrl.replace(/\.webp$/, ".jpg");
+      }
 
       const response = await axios.post(
         `${graphUrl}/${integration.providerAccountId}/media`,
         null,
         {
-          params: { image_url: imageUrl, caption, access_token },
+          params: {
+            image_url: finalImageUrl,
+            caption: caption || "",
+            access_token,
+          },
+          timeout: 15000,
         },
       );
 
       const creationId = response.data?.id;
 
-      const isReady = false;
+      if (!creationId) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: "Falid to ceate media container ID from Meta.",
+            },
+          ],
+        };
+      }
+
+      let isReady = false;
 
       for (let attempt = 0; attempt < 10; attempt++) {
-        const statusResponse = await axios.post(
-          `${graphUrl}/${creationId}/media`,
-          null,
-          {
-            params: { fields: "status_code", access_token },
-          },
-        );
+        const statusResponse = await axios.get(`${graphUrl}/${creationId}`, {
+          params: { fields: "status_code", access_token },
+          timeout: 10000,
+        });
 
         if (statusResponse.data?.status_code === "FINISHED") {
           isReady = true;
           break;
         }
 
-        await Promise((r) => {
+        await new Promise((r) => {
           setTimeout(r, 3000);
         });
       }
@@ -548,7 +573,7 @@ server.registerTool(
         content: [
           {
             type: "text",
-            text: `Instagram publishing faild: ${error.message || error}`,
+            text: `Instagram publishing failed: ${error.message || error}`,
           },
         ],
       };

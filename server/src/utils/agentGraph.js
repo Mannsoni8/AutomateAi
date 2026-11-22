@@ -15,6 +15,7 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import z from "zod";
 import jwt from "jsonwebtoken";
 import { invokeWithRateLimitRetry } from "./retry.js";
+import { sanitizeMessages } from "./sanitizeMessages.js";
 import { ChatGoogle } from "@langchain/google";
 
 const llm = new ChatGroq({
@@ -51,40 +52,38 @@ const generateCaption = async (imageUrl) => {
   try {
     const imageResponse = await fetch(imageUrl);
     if (!imageResponse.ok) {
-      throw new Error(`Faild to fetch image. Status:${imageResponse.status}`);
+      throw new Error(`Failed to fetch image. Status: ${imageResponse.status}`);
     }
 
     const arrayBuffer = await imageResponse.arrayBuffer();
     const base64image = Buffer.from(arrayBuffer).toString("base64");
-
-    const contentType = imageResponse.headers.get("content-type");
+    const contentType =
+      imageResponse.headers.get("content-type") || "image/jpeg";
 
     const imageAnalyzer = new ChatGoogle({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       temperature: 0,
-      maxTokens: undefined,
       maxRetries: 2,
-      // other params...
     });
 
     const message = new HumanMessage({
       content: [
         {
           type: "text",
-          text: `Analyze this image and generate a catchy social media caption with releant hashtags. STRICT RULE: Do not include any greetings, introductory text, explanations, or concersational filler (like 'Sure, here is...' ,'Here is a caption'). Output ONLY the caption and hashtags`,
+          text: `Analyze this image and generate a catchy social media caption with relevant hashtags. STRICT RULE: Do not include any greetings, introductory text, explanations, or conversational filler (like 'Sure, here is...', 'Here is a caption'). Output ONLY the caption and hashtags.`,
         },
         {
           type: "image_url",
-          image_url: `data:${contentType}; base,${base64image}`,
+          image_url: `data:${contentType};base64,${base64image}`,
         },
       ],
     });
     const response = await imageAnalyzer.invoke([message]);
 
-    return response.content.trim();
+    return typeof response.content === "string" ? response.content.trim() : "";
   } catch (error) {
-    console.log(error);
-    return error;
+    console.error("Caption generation error:", error.message || error);
+    return "";
   }
 };
 
@@ -373,63 +372,43 @@ Date and time rules:
       new DynamicStructuredTool({
         name: "publish_instagram_post",
         description: `
-Publish an image to the authenticated user's connected Instagram account.
-
-Use this tool ONLY when the user explicitly requests an Instagram
-post or asks to publish an image to Instagram.
-
-Examples:
-- Post this image on Instagram.
-- Upload this image to my Instagram.
-- Publish this image with a caption.
-
-Do NOT use this tool when:
-- The user only uploads an image.
-- The user asks what an image contains.
-- The user asks to explain or analyze an image.
-- The user asks to describe an image.
-
-Requirements:
-- imageUrl must be a public HTTPS URL.
-- Generate a caption if one is not provided.
-- The application requires explicit user approval before publishing.
-- Never claim success unless publishing is confirmed.
-`,
+        Publish an image to the authenticated user's connected Instagram account.
+        Use only when the user explicitly requests publishing or posting to Instagram.
+        Requires a valid public HTTPS imageUrl and an optional caption.
+        `,
         schema: z.object({
           imageUrl: z
             .string()
             .url()
-            .refine((url) => url.startsWith("https://"))
-            .describe("Public HTTPS image URL from Cloudinary"),
+            .describe("Publicly accessible HTTPS image URL to publish"),
           caption: z
             .string()
             .trim()
             .max(2200)
             .optional()
-            .describe("Optional Instagram caption"),
+            .describe("Caption and hashtags for the Instagram post"),
         }),
-
         func: async ({ imageUrl, caption }) => {
           try {
-            const authToken = makeAuthToken(userId);
-
-            let finalCaption = "";
-
-            if (!caption) {
-              finalCaption = await generateCaption(imageUrl);
-            } else {
-              finalCaption = caption;
+            let finalCaption = caption;
+            if (!finalCaption) {
+              try {
+                finalCaption = await generateCaption(imageUrl);
+              } catch (e) {
+                console.warn("Caption generation failed:", e.message || e);
+              }
             }
 
+            const authToken = makeAuthToken(userId);
             const result = await publishOnInstagramMcpTool.invoke({
               authToken,
               imageUrl,
-              caption: finalCaption,
+              caption: finalCaption || "",
             });
             return result;
           } catch (error) {
             console.error("❌ MCP publish_instagram_post Error: ", error);
-            return "Publish instagram post Events failed";
+            return `Publish instagram post failed: ${error.message || error}`;
           }
         },
       }),
@@ -452,6 +431,9 @@ Context & Rules:
 - Timezone: Asia/Kolkata. Default event duration: 30 minutes.
 - Resolve relative dates (today, tomorrow, weekdays) using the current timestamp.
 - When an action is directly requested, call the appropriate tool.
+- When a user message includes an "Attached image URL: https://..." line, treat it as the public image attached to that turn.
+- If the user explicitly asks to publish that image on Instagram, call publish_instagram_post with the exact attached URL as imageUrl; do not ask them to provide the URL again.
+- An attached image alone is not permission to publish; only publish after an explicit request.
 - Never ask for passwords, API keys, tokens, or user IDs.
 - Never fabricate search results or tool confirmations.
 - Be concise, accurate, and helpful.
@@ -464,7 +446,8 @@ Context & Rules:
   ]);
 
   const chatNode = async (state) => {
-    const recentMessages = state.messages
+    const cleanMessages = sanitizeMessages(state.messages || []);
+    const recentMessages = cleanMessages
       .slice(-4)
       .map((message) => limitMessageContext(message));
 
