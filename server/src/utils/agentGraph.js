@@ -93,7 +93,13 @@ export const createAgentGraph = async (agent, userId) => {
     "autoMate_list_calendar_event",
   ]);
 
+    const listEmailsMcpTool = findTool(mcpTools, [
+    "list_emails",
+    "autoMate_list_emails",
+  ]);
+
   const finalTools = [];
+  
   if (webSearchMcpTool) {
     finalTools.push(
       new DynamicStructuredTool({

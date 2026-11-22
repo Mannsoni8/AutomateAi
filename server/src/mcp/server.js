@@ -12,6 +12,7 @@ import integrationModel from "../model/integration.model.js";
 import { decrypt } from "../config/encrypt-decrypt.js";
 import { googleOauthClient } from "../config/googleOAuth.js";
 import { google } from "googleapis";
+import axios from "axios";
 
 const server = new McpServer({
   name: "automate-ai-mcp-server",
@@ -31,10 +32,10 @@ const verifyAuthToken = (token) => {
   return payload.sub;
 };
 
-const getHeader = (headers=[],nums)=>{
-  const header=headers.find((h)=>h.name.toLowerCase())
-  return header?.value || ""
-}
+const getHeader = (headers = [], nums) => {
+  const header = headers.find((h) => h.name.toLowerCase());
+  return header?.value || "";
+};
 
 const getGoogleOauthClient = async (userId, requiredService) => {
   await connectDB();
@@ -431,6 +432,123 @@ server.registerTool(
           {
             type: "text",
             text: `list event failed: ${error.message || error}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+server.registerTool(
+  "publish_instagram_post",
+  {
+    description:
+      "Publish an image to the authenticated user's connected Instagram account.",
+    inputSchema: z.object({
+      authToken: z.string().min(1),
+      imageUrl: z
+        .string()
+        .url()
+        .refine((url) => url.startsWith("https://")),
+      caption: z.string().trim().max(2200).optional(),
+    }),
+  },
+  async ({ authToken, imageUrl, caption }) => {
+    try {
+      const userId = verifyAuthToken(authToken);
+
+      await connectDB();
+      const integration = await integrationModel
+        .findOne({
+          userId,
+          provider: "instagram",
+          services: "instagram",
+          status: "connected",
+        })
+        .select(
+          "+tokens.accessToken providerAccountId account.username tokens.expiresAt",
+        );
+      if (!integration?.providerAccountId || !integration.tokens?.accessToken) {
+        throw new Error(
+          `Instagram is not connected or its access token is unavailable.`,
+        );
+      }
+
+      const access_token = await decrypt(integration.tokens.accessToken);
+
+      const graphVersion = config.INSTAGRAM_GRAPH_VERSION;
+
+      const graphUrl = `https://instagram.com${graphVersion}`;
+
+      const response = await axios.post(
+        `${graphUrl}/${integration.providerAccountId}/media`,
+        null,
+        {
+          params: { image_url: imageUrl, caption, access_token },
+        },
+      );
+
+      const creationId = response.data?.id;
+
+      const isReady = false;
+
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const statusResponse = await axios.post(
+          `${graphUrl}/${creationId}/media`,
+          null,
+          {
+            params: { fields: "status_code", access_token },
+          },
+        );
+
+        if (statusResponse.data?.status_code === "FINISHED") {
+          isReady = true;
+          break;
+        }
+
+        await Promise((r) => {
+          setTimeout(r, 3000);
+        });
+      }
+
+      if (!isReady) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Instagram media processing timeout.",
+            },
+          ],
+        };
+      }
+
+      const publishResponse = await axios.post(
+        `${graphUrl}/${integration.providerAccountId}/media_publish`,
+        null,
+        {
+          params: { creation_id: creationId, access_token },
+        },
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: true,
+              mediaId: publishResponse.data?.id,
+              caption,
+            }),
+          },
+        ],
+      };
+    } catch (error) {
+      console.error("publish_instagram_post error:", error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Instagram publishing faild: ${error.message || error}`,
           },
         ],
       };
