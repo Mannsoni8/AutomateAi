@@ -44,7 +44,6 @@ export const loginController = async (req, res) => {
       },
       {
         upsert: true,
-        new: true,
         returnDocument: "after",
       },
     );

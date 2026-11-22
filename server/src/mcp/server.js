@@ -31,6 +31,11 @@ const verifyAuthToken = (token) => {
   return payload.sub;
 };
 
+const getHeader = (headers=[],nums)=>{
+  const header=headers.find((h)=>h.name.toLowerCase())
+  return header?.value || ""
+}
+
 const getGoogleOauthClient = async (userId, requiredService) => {
   await connectDB();
   const integration = await integrationModel
@@ -59,7 +64,7 @@ const getGoogleOauthClient = async (userId, requiredService) => {
 };
 
 const tavilySearch = new TavilySearch({
-  maxResults: 5,
+  maxResults: 3,
   topic: "general",
   tavilyApiKey: config.TAVILY_API_KEY,
 });
@@ -79,7 +84,7 @@ server.registerTool(
         content: [
           {
             type: "text",
-            text: result,
+            text: typeof result === "string" ? result : JSON.stringify(result),
           },
         ],
       };
@@ -103,7 +108,7 @@ server.registerTool(
       "Send an email through the authenticated user's connected Gmail account. Only execute after explicit user approval.",
     inputSchema: z.object({
       authToken: z.string().min(1),
-      to: z.string().email(),
+      to: z.string().trim().email(),
       subject: z.string().trim().min(1).max(200),
       body: z.string().trim().min(1).max(2000),
     }),
@@ -118,15 +123,16 @@ server.registerTool(
         auth: oauthClient,
       });
 
+      const cleanTo = to.trim();
       const base64Subject = Buffer.from(subject, "utf8").toString("base64");
       const encodedSubject = `=?utf-8?B?${base64Subject}?=`;
 
       const emailLines = [
-        `To: ${to}`,
-        ` Subject:${encodedSubject}`,
+        `To: ${cleanTo}`,
+        `Subject: ${encodedSubject}`,
         "MIME-Version: 1.0",
         "Content-Type: text/plain; charset=utf-8",
-        "Content-Transfer-Encoding: 7bit",
+        "Content-Transfer-Encoding: base64",
         "",
         Buffer.from(body, "utf8").toString("base64"),
       ];

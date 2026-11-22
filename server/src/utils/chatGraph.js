@@ -10,6 +10,7 @@ import {
 import { MongoDBSaver } from "@langchain/langgraph-checkpoint-mongodb";
 import { MongoClient } from "mongodb";
 import { config } from "../config/env.js";
+import { invokeWithRateLimitRetry } from "./retry.js";
 
 const llm = new ChatGroq({
   model: config.GROQ_MODEL || "openai/gpt-oss-120b",
@@ -27,7 +28,9 @@ const defaultSystemMessage = new SystemMessage(
 
 const chatNode = async (state) => {
   const recentMessages = state.messages.slice(-6);
-  const response = await llm.invoke([defaultSystemMessage, ...recentMessages]);
+  const response = await invokeWithRateLimitRetry(() =>
+    llm.invoke([defaultSystemMessage, ...recentMessages]),
+  );
 
   return {
     messages: [response],

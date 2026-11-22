@@ -20,7 +20,18 @@ export const chatController = async (req, res) => {
 
     return res.status(200).json(lastMessage);
   } catch (error) {
-    return res.status(500).json({ message: `Chat controller error ${error}` });
+    const errorStr = String(error?.message || error);
+    if (
+      error?.status === 429 ||
+      errorStr.includes("429") ||
+      errorStr.includes("rate_limit_exceeded") ||
+      errorStr.includes("RateLimitQuotaExhaustedError")
+    ) {
+      return res.status(429).json({
+        message: "AI rate limit reached. Please wait a few seconds and try again.",
+      });
+    }
+    return res.status(500).json({ message: `Chat controller error ${error.message || error}` });
   }
 };
 
@@ -53,8 +64,19 @@ export const agentChatController = async (req, res) => {
 
     return res.status(200).json(lastMessage);
   } catch (error) {
+    const errorStr = String(error?.message || error);
+    if (
+      error?.status === 429 ||
+      errorStr.includes("429") ||
+      errorStr.includes("rate_limit_exceeded") ||
+      errorStr.includes("RateLimitQuotaExhaustedError")
+    ) {
+      return res.status(429).json({
+        message: "AI rate limit reached. Please wait a few seconds and try again.",
+      });
+    }
     return res
       .status(500)
-      .json({ message: `Agent Chat controller error ${error}` });
+      .json({ message: `Agent Chat controller error ${error.message || error}` });
   }
 };

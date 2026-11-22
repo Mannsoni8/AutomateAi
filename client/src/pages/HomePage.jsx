@@ -127,12 +127,15 @@ const HomePage = () => {
       ]);
     } catch (error) {
       console.error("Chat error:", error);
+      const errorMessage =
+        error.response?.data?.message ||
+        "Sorry, an error occurred while processing your message.";
 
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Sorry, an error occurred while processing your message.",
+          content: errorMessage,
         },
       ]);
     } finally {
