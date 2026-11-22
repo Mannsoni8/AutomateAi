@@ -12,6 +12,11 @@ import integrationModel from "../model/integration.model.js";
 import { decrypt } from "../config/encrypt-decrypt.js";
 import { googleOauthClient } from "../config/googleOAuth.js";
 import { google } from "googleapis";
+import {
+  convertCloudinaryToJpeg,
+  validateInstagramImage,
+  sanitizeMetaError,
+} from "../utils/instagramUtils.js";
 import axios from "axios";
 
 const server = new McpServer({
@@ -469,91 +474,199 @@ server.registerTool(
           "+tokens.accessToken providerAccountId account.username tokens.expiresAt",
         );
       if (!integration?.providerAccountId || !integration.tokens?.accessToken) {
-        throw new Error(
-          `Instagram is not connected or its access token is unavailable.`,
-        );
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                error: "Instagram is not connected or its access token is unavailable. Please connect your Instagram account first.",
+                code: "INSTAGRAM_NOT_CONNECTED",
+              }),
+            },
+          ],
+        };
       }
 
       const access_token = await decrypt(integration.tokens.accessToken);
 
       const rawVersion = config.INSTAGRAM_GRAPH_VERSION || "v24.0";
-      const graphVersion = rawVersion.startsWith("/")
-        ? rawVersion
-        : `/${rawVersion}`;
-      const graphUrl = `https://graph.facebook.com${graphVersion}`;
+      const cleanVersion = rawVersion.replace(/^\/+/, "");
+      const graphUrl = `https://graph.facebook.com/${cleanVersion}`;
 
-      let finalImageUrl = imageUrl;
+      // Convert Cloudinary image to JPEG format
+      const finalImageUrl = convertCloudinaryToJpeg(imageUrl);
 
-      if (
-        finalImageUrl.includes("://cloudinary.com") &&
-        finalImageUrl.endsWith(".webp")
-      ) {
-        finalImageUrl = finalImageUrl.replace(/\.webp$/, ".jpg");
+      // Validate image accessibility and Content-Type
+      const imageValidation = await validateInstagramImage(finalImageUrl);
+      if (!imageValidation.valid) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                error: imageValidation.error,
+                code: imageValidation.code,
+                imageUrl: finalImageUrl,
+              }),
+            },
+          ],
+        };
       }
 
-      const response = await axios.post(
-        `${graphUrl}/${integration.providerAccountId}/media`,
-        null,
-        {
-          params: {
-            image_url: finalImageUrl,
-            caption: caption || "",
-            access_token,
+      // Step 1: Create Media Container
+      let createResponse;
+      try {
+        createResponse = await axios.post(
+          `${graphUrl}/${integration.providerAccountId}/media`,
+          null,
+          {
+            params: {
+              image_url: finalImageUrl,
+              caption: caption || "",
+              access_token,
+            },
+            timeout: 20000,
           },
-          timeout: 15000,
-        },
-      );
+        );
+      } catch (err) {
+        const sanitized = sanitizeMetaError(err);
+        console.error("Meta media container creation failed:", sanitized);
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                error: `Meta container creation failed: ${sanitized.message}`,
+                code: sanitized.code,
+              }),
+            },
+          ],
+        };
+      }
 
-      const creationId = response.data?.id;
-
+      const creationId = createResponse.data?.id;
       if (!creationId) {
         return {
           isError: true,
           content: [
             {
               type: "text",
-              text: "Falid to ceate media container ID from Meta.",
+              text: JSON.stringify({
+                success: false,
+                error: "Failed to create media container ID from Meta.",
+                code: "CONTAINER_CREATION_FAILED",
+              }),
             },
           ],
         };
       }
 
+      // Step 2: Poll Container Processing Status
       let isReady = false;
+      for (let attempt = 0; attempt < 15; attempt++) {
+        try {
+          const statusResponse = await axios.get(`${graphUrl}/${creationId}`, {
+            params: { fields: "status_code,status", access_token },
+            timeout: 10000,
+          });
 
-      for (let attempt = 0; attempt < 10; attempt++) {
-        const statusResponse = await axios.get(`${graphUrl}/${creationId}`, {
-          params: { fields: "status_code", access_token },
-          timeout: 10000,
-        });
+          const statusCode = statusResponse.data?.status_code;
 
-        if (statusResponse.data?.status_code === "FINISHED") {
-          isReady = true;
-          break;
+          if (statusCode === "FINISHED") {
+            isReady = true;
+            break;
+          }
+
+          if (statusCode === "ERROR" || statusCode === "EXPIRED") {
+            const detail = statusResponse.data?.status || "Container processing failed on Meta.";
+            return {
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    success: false,
+                    error: `Instagram media processing failed: ${statusCode} - ${detail}`,
+                    code: `CONTAINER_${statusCode}`,
+                  }),
+                },
+              ],
+            };
+          }
+        } catch (pollErr) {
+          console.warn(`Polling container ${creationId} attempt ${attempt + 1} error:`, pollErr.message);
         }
 
-        await new Promise((r) => {
-          setTimeout(r, 3000);
-        });
+        await new Promise((r) => setTimeout(r, 2000));
       }
 
       if (!isReady) {
         return {
+          isError: true,
           content: [
             {
               type: "text",
-              text: "Instagram media processing timeout.",
+              text: JSON.stringify({
+                success: false,
+                error: "Instagram media processing timed out. Image was not ready within 30 seconds.",
+                code: "MEDIA_PROCESSING_TIMEOUT",
+              }),
             },
           ],
         };
       }
 
-      const publishResponse = await axios.post(
-        `${graphUrl}/${integration.providerAccountId}/media_publish`,
-        null,
-        {
-          params: { creation_id: creationId, access_token },
-        },
-      );
+      // Step 3: Publish Container
+      let publishResponse;
+      try {
+        publishResponse = await axios.post(
+          `${graphUrl}/${integration.providerAccountId}/media_publish`,
+          null,
+          {
+            params: { creation_id: creationId, access_token },
+            timeout: 20000,
+          },
+        );
+      } catch (err) {
+        const sanitized = sanitizeMetaError(err);
+        console.error("Meta media publish failed:", sanitized);
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                error: `Meta media publish failed: ${sanitized.message}`,
+                code: sanitized.code,
+              }),
+            },
+          ],
+        };
+      }
+
+      const mediaId = publishResponse.data?.id;
+      if (!mediaId) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                error: "Instagram did not return a verified media ID after publication.",
+                code: "PUBLISH_VERIFICATION_FAILED",
+              }),
+            },
+          ],
+        };
+      }
 
       return {
         content: [
@@ -561,19 +674,27 @@ server.registerTool(
             type: "text",
             text: JSON.stringify({
               success: true,
-              mediaId: publishResponse.data?.id,
-              caption,
+              mediaId,
+              caption: caption || "",
+              imageUrl: finalImageUrl,
+              publishedAt: new Date().toISOString(),
+              message: "Instagram post published successfully",
             }),
           },
         ],
       };
     } catch (error) {
-      console.error("publish_instagram_post error:", error);
+      console.error("publish_instagram_post unexpected error:", error);
       return {
+        isError: true,
         content: [
           {
             type: "text",
-            text: `Instagram publishing failed: ${error.message || error}`,
+            text: JSON.stringify({
+              success: false,
+              error: `Instagram publishing failed: ${error.message || error}`,
+              code: "UNEXPECTED_ERROR",
+            }),
           },
         ],
       };

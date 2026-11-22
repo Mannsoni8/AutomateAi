@@ -97,6 +97,7 @@ const HomePage = () => {
 
     if (imagePreview) URL.revokeObjectURL(imagePreview);
     setSelectedImage(file);
+    setUploadedImage(null);
     setImagePreview(URL.createObjectURL(file));
   };
 

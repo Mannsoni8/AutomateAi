@@ -139,7 +139,7 @@ export const googleCallbackController = async (req, res) => {
 
     console.log("6. Integration saved successfully");
 
-    return res.redirect(`${config.FRONTED_URL}/integrations?google=connected`);
+    return res.redirect(`${config.FRONTED_URL}/integration?google=connected`);
   } catch (error) {
     console.error("GOOGLE CALLBACK ERROR:", error);
     console.error("ERROR MESSAGE:", error.message);
@@ -159,7 +159,12 @@ const INSTAGRAM_APP_ID = config.INSTAGRAM_APP_ID;
 const INSTAGRAM_APP_SECRET = config.INSTAGRAM_APP_SECRET;
 const INSTAGRAM_GRAPH_VERSION = config.INSTAGRAM_GRAPH_VERSION;
 
-const INSTAGRAM_SCOPES = ["instagram_basic", "instagram_content_publish"];
+const INSTAGRAM_SCOPES = [
+  "instagram_basic",
+  "instagram_content_publish",
+  "pages_show_list",
+  "pages_read_engagement",
+];
 
 export const connectInstagramController = async (req, res) => {
   try {
@@ -178,13 +183,17 @@ export const connectInstagramController = async (req, res) => {
     const params = new URLSearchParams({
       client_id: INSTAGRAM_APP_ID,
       redirect_uri: INSTAGRAM_REDIRECT_URI,
-      config_id: INSTAGRAM_CONFIG_ID,
+      scope: INSTAGRAM_SCOPES.join(","),
       display: "popup",
       override_default_response_type: "true",
       response_type: "code",
       state,
       prompt: "login",
     });
+
+    if (INSTAGRAM_CONFIG_ID) {
+      params.set("config_id", INSTAGRAM_CONFIG_ID);
+    }
 
     const url = `https://www.facebook.com/dialog/oauth?${params.toString()}`;
 
@@ -199,6 +208,7 @@ export const connectInstagramController = async (req, res) => {
     });
   }
 };
+
 export const instagramCallbackController = async (req, res) => {
   try {
     const { code, state, error } = req.query;
@@ -215,8 +225,13 @@ export const instagramCallbackController = async (req, res) => {
         message: "Invalid oauth state",
       });
     }
+
+    const rawVersion = INSTAGRAM_GRAPH_VERSION || "v24.0";
+    const cleanVersion = rawVersion.replace(/^\/+/, "");
+    const fbGraphUrl = `https://graph.facebook.com/${cleanVersion}`;
+
     const tokenResponse = await axios.get(
-      ` https://graph.facebook.com/${INSTAGRAM_GRAPH_VERSION}/oauth/access_token?`,
+      `${fbGraphUrl}/oauth/access_token`,
       {
         params: {
           client_id: INSTAGRAM_APP_ID,
@@ -227,23 +242,60 @@ export const instagramCallbackController = async (req, res) => {
         timeout: 15000,
       },
     );
-    const userAccessToken = tokenResponse.data.access_token;
+    const userAccessToken = tokenResponse.data?.access_token;
 
-    const assignedAccounts = await axios.get(
-      ` https://graph.facebook.com/${INSTAGRAM_GRAPH_VERSION}/me/assigned_instagram_accounts`,
-      {
-        params: {
-          fields: "id,username",
-          access_token: userAccessToken,
-        },
-        timeout: 15000,
-      },
-    );
-    const instagramAccounts = assignedAccounts.data.data;
-
-    if (!Array.isArray(instagramAccounts) || instagramAccounts.length === 0) {
+    if (!userAccessToken) {
       return res.redirect(
         `${config.FRONTED_URL}/integration?instagram=failed`,
+      );
+    }
+
+    let instagramAccounts = [];
+
+    // Strategy 1: Check assigned_instagram_accounts
+    try {
+      const assignedAccounts = await axios.get(
+        `${fbGraphUrl}/me/assigned_instagram_accounts`,
+        {
+          params: {
+            fields: "id,username",
+            access_token: userAccessToken,
+          },
+          timeout: 15000,
+        },
+      );
+      if (Array.isArray(assignedAccounts.data?.data)) {
+        instagramAccounts = assignedAccounts.data.data;
+      }
+    } catch (assignErr) {
+      console.warn("me/assigned_instagram_accounts lookup warning:", assignErr.message);
+    }
+
+    // Strategy 2: Check linked instagram_business_account on Facebook Pages
+    if (instagramAccounts.length === 0) {
+      try {
+        const pagesRes = await axios.get(`${fbGraphUrl}/me/accounts`, {
+          params: {
+            fields: "id,name,instagram_business_account{id,username,name}",
+            access_token: userAccessToken,
+          },
+          timeout: 15000,
+        });
+        const pages = pagesRes.data?.data || [];
+        for (const page of pages) {
+          if (page.instagram_business_account?.id) {
+            instagramAccounts.push(page.instagram_business_account);
+          }
+        }
+      } catch (pageErr) {
+        console.warn("me/accounts lookup warning:", pageErr.message);
+      }
+    }
+
+    if (!Array.isArray(instagramAccounts) || instagramAccounts.length === 0) {
+      console.warn("No linked Professional (Business or Creator) Instagram accounts found.");
+      return res.redirect(
+        `${config.FRONTED_URL}/integration?instagram=no_business_account`,
       );
     }
 
@@ -255,18 +307,24 @@ export const instagramCallbackController = async (req, res) => {
       );
     }
 
-    const profile = await axios.get(
-      `https://graph.facebook.com/${INSTAGRAM_GRAPH_VERSION}/${dynamicAccount.id}`,
-      {
-        params: {
-          fields: "id,username,name",
-          access_token: userAccessToken,
+    // Verify account profile and permissions
+    let profileData = {};
+    try {
+      const profile = await axios.get(
+        `${fbGraphUrl}/${dynamicAccount.id}`,
+        {
+          params: {
+            fields: "id,username,name",
+            access_token: userAccessToken,
+          },
+          timeout: 15000,
         },
-        timeout: 15000,
-      },
-    );
-
-    const profileData = profile.data || {};
+      );
+      profileData = profile.data || {};
+    } catch (profileErr) {
+      console.warn("Profile fetch warning:", profileErr.message);
+      profileData = dynamicAccount;
+    }
 
     const filter = {
       userId: decoded.userId,

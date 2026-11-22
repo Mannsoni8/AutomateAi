@@ -9,13 +9,14 @@ import {
   StateGraph,
 } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { getMcpTools } from "../mcp/langgrap-mcp.js";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import z from "zod";
 import jwt from "jsonwebtoken";
 import { invokeWithRateLimitRetry } from "./retry.js";
 import { sanitizeMessages } from "./sanitizeMessages.js";
+import { isExplicitConfirmation } from "./instagramUtils.js";
 import { ChatGoogle } from "@langchain/google";
 
 const llm = new ChatGroq({
@@ -433,17 +434,30 @@ Context & Rules:
 - When an action is directly requested, call the appropriate tool.
 - When a user message includes an "Attached image URL: https://..." line, treat it as the public image attached to that turn.
 - If the user explicitly asks to publish that image on Instagram, call publish_instagram_post with the exact attached URL as imageUrl; do not ask them to provide the URL again.
-- An attached image alone is not permission to publish; only publish after an explicit request.
+- Never publish an Instagram post without explicit user confirmation.
 - Never ask for passwords, API keys, tokens, or user IDs.
 - Never fabricate search results or tool confirmations.
 - Be concise, accurate, and helpful.
 `;
 
   const approvalTools = new Set([
-    // "send_email",
-    // "create_calendar_event",
+    "publish_instagram_post",
     "publish_instagram_image",
   ]);
+
+  const checkHistoryConfirmation = (messages = []) => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      const isHuman =
+        msg._getType?.() === "human" ||
+        msg.role === "user" ||
+        msg.name === "user";
+      if (isHuman && typeof msg.content === "string") {
+        return isExplicitConfirmation(msg.content);
+      }
+    }
+    return false;
+  };
 
   const chatNode = async (state) => {
     const cleanMessages = sanitizeMessages(state.messages || []);
@@ -462,14 +476,46 @@ Context & Rules:
   const toolNode = new ToolNode(finalTools);
 
   const actionApprovalNode = async (state) => {
-    return state;
+    const messages = state.messages || [];
+    const lastMessage = messages[messages.length - 1];
+    const toolCall = lastMessage?.tool_calls?.find((call) =>
+      approvalTools.has(call.name),
+    );
+
+    if (!toolCall) {
+      return state;
+    }
+
+    const confirmed = checkHistoryConfirmation(messages.slice(0, -1));
+    if (confirmed) {
+      return state;
+    }
+
+    let { imageUrl, caption } = toolCall.args || {};
+    if (!caption && imageUrl) {
+      try {
+        caption = await generateCaption(imageUrl);
+      } catch (e) {
+        console.warn("Caption generation in approval preview failed:", e);
+      }
+    }
+
+    const captionDisplay = caption ? `\n\n**Proposed Caption:**\n${caption}` : "";
+    const imageDisplay = imageUrl ? `\n\n**Image:** ${imageUrl}` : "";
+
+    const previewMessage = new AIMessage({
+      content: `I've prepared your Instagram post!${imageDisplay}${captionDisplay}\n\n⚠️ **Confirmation Required:**\nWould you like me to publish this post to your Instagram account?\nPlease reply **"Yes"** or **"Confirm"** to proceed.`,
+    });
+
+    return {
+      messages: [previewMessage],
+    };
   };
 
   const routeAfterChat = (state) => {
     const messages = state.messages || [];
     const lastMessage = messages[messages.length - 1];
 
-    // If no tool calls were generated, the model has completed its reply -> End graph
     if (!lastMessage?.tool_calls || lastMessage.tool_calls.length === 0) {
       return END;
     }
@@ -480,7 +526,12 @@ Context & Rules:
     return requiresApproval ? "actionApprovalNode" : "tools";
   };
 
-  const routeAfterApproval = () => {
+  const routeAfterApproval = (state) => {
+    const messages = state.messages || [];
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage?.tool_calls || lastMessage.tool_calls.length === 0) {
+      return END;
+    }
     return "tools";
   };
 
