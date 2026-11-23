@@ -26,4 +26,6 @@ export const config = {
   INSTAGRAM_GRAPH_VERSION: process.env.INSTAGRAM_GRAPH_VERSION,
   MCP_AUTH_SECRET: process.env.MCP_AUTH_SECRET || process.env.JWT_SECRET,
   GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
+  RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID,
+  RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET,
 };

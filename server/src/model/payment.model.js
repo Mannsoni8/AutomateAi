@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 const paymentSchema = new mongoose.Schema(
   {
-    userrId: {
+    userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
@@ -36,7 +36,7 @@ const paymentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enums: ["created", "paid", "failed"],
+      enum: ["created", "paid", "failed"],
       default: "created",
     },
   },
