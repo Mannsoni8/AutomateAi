@@ -7,6 +7,7 @@ import authRouter from "./src/routers/auth.route.js";
 import agentRouter from "./src/routers/agent.routes.js";
 import chatRouter from "./src/routers/chat.route.js";
 import integrationRouter from "./src/routers/integration.route.js";
+import paymentRouter from "./src/routers/payment.route.js";
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/agents", agentRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/integrations", integrationRouter);
+app.use("/api/payment", paymentRouter);
 
 // Handle 404 for missing routes
 app.use((req, res) => {
