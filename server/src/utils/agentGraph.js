@@ -62,7 +62,7 @@ const generateCaption = async (imageUrl) => {
       imageResponse.headers.get("content-type") || "image/jpeg";
 
     const imageAnalyzer = new ChatGoogle({
-      model: "gemini-2.0-flash",
+      model: "gemini-4-hydrogen",
       temperature: 0,
       maxRetries: 2,
     });
