@@ -1,14 +1,23 @@
 import {
   ArrowUp,
   Bot,
+  Calendar,
+  Camera,
+  Check,
+  Clock,
+  Coins,
   ImagePlus,
   Loader2,
   LogOut,
+  Mail,
   Plus,
   Settings2,
+  ShieldAlert,
+  SquarePen,
   Trash2,
   UserRound,
   Workflow,
+  X,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -25,7 +34,7 @@ import { logout } from "@/features/auth";
 import { setUserData } from "@/redux/userSlice";
 import { setSelectedAgent } from "@/redux/agentSlice";
 import { Textarea } from "@/components/ui/textarea";
-import { agentChat, chat } from "@/features/chat";
+import { agentChat, chat, resumeChat } from "@/features/chat";
 
 const hideScrollbar =
   "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
@@ -51,6 +60,12 @@ const HomePage = () => {
   const [imagePreview, setImagePreview] = useState("");
   const [uploadedImage, setUploadedImage] = useState(null);
   const [imageUploading, setImageUploading] = useState(false);
+
+  const [approvingIndex, setApprovingIndex] = useState(null);
+  const [rejectingIndex, setRejectingIndex] = useState(null);
+  const [chatSessionId, setChatSessionId] = useState(() =>
+    Date.now().toString(),
+  );
 
   const { userData } = useSelector((state) => state.user || {});
   const { agents = [], selectedAgent } = useSelector(
@@ -199,24 +214,39 @@ const HomePage = () => {
       const payload = {
         message: prompt,
         image_url: image?.secure_url || null,
+        threadId: `${userData?._id || "user"}:${chatSessionId}:${selectedAgent || "default"}`,
       };
 
       const response = selectedAgent
         ? await agentChat(payload, selectedAgent)
         : await chat(payload);
 
-      const text =
-        typeof response === "string"
-          ? response
-          : response?.content || response?.response || JSON.stringify(response);
+      if (response?.interrupted) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            interrupted: true,
+            interrupt: response.interrupt,
+            threadId: response.threadId,
+            agent: selectedAgent || response.agent,
+            status: "pending",
+          },
+        ]);
+      } else {
+        const text =
+          typeof response === "string"
+            ? response
+            : response?.content || response?.response || JSON.stringify(response);
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: text,
-        },
-      ]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: text,
+          },
+        ]);
+      }
 
       clearSelectedImage();
     } catch (error) {
@@ -235,6 +265,88 @@ const HomePage = () => {
     } finally {
       setChatLoading(false);
     }
+  };
+
+  const handleApproval = async (messageIndex, approved) => {
+    const targetMsg = messages[messageIndex];
+    if (!targetMsg || !targetMsg.interrupted || targetMsg.status !== "pending")
+      return;
+
+    if (approved) {
+      setApprovingIndex(messageIndex);
+    } else {
+      setRejectingIndex(messageIndex);
+    }
+
+    try {
+      const response = await resumeChat(
+        targetMsg.threadId,
+        { approved },
+        targetMsg.agent,
+      );
+
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[messageIndex] = {
+          ...updated[messageIndex],
+          status: approved ? "approved" : "rejected",
+        };
+        return updated;
+      });
+
+      if (response?.interrupted) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            interrupted: true,
+            interrupt: response.interrupt,
+            threadId: response.threadId,
+            agent: response.agent || targetMsg.agent,
+            status: "pending",
+          },
+        ]);
+      } else {
+        const text =
+          typeof response === "string"
+            ? response
+            : response?.content || response?.response || JSON.stringify(response);
+
+        if (text) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: text,
+            },
+          ]);
+        }
+      }
+    } catch (error) {
+      console.error("Approval action error:", error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            error.response?.data?.message ||
+            error.message ||
+            "Failed to complete action",
+        },
+      ]);
+    } finally {
+      setApprovingIndex(null);
+      setRejectingIndex(null);
+    }
+  };
+
+  const handleNewChat = () => {
+    setMessages([]);
+    setInput("");
+    clearSelectedImage();
+    setApprovingIndex(null);
+    setRejectingIndex(null);
+    setChatSessionId(Date.now().toString());
   };
 
   const handleKeyDown = (e) => {
@@ -265,6 +377,16 @@ const HomePage = () => {
             </span>
           </Link>
           <div className="flex items-center gap-2.5">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleNewChat}
+              title="Start a new chat"
+              className="h-9 gap-1.5 rounded-xl border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white">
+              <SquarePen size={15} />
+              <span className="hidden sm:inline">New Chat</span>
+            </Button>
+
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button variant="outline" className={iconBtn} />}>
@@ -304,6 +426,16 @@ const HomePage = () => {
                   }>
                   <Settings2 size={16} />
                   Integration
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  render={
+                    <Link
+                      to="/pricing"
+                      className="flex items-center gap-2.5 py-2.5"
+                    />
+                  }>
+                  <Coins size={16} />
+                  Price
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -382,11 +514,10 @@ const HomePage = () => {
                   messages.map((message, index) => (
                     <div
                       key={index}
-                      className={`flex w-full items-start gap-3 ${
-                        message.role === "user"
-                          ? "justify-end"
-                          : "justify-start"
-                      }`}>
+                      className={`flex w-full items-start gap-3 ${message.role === "user"
+                        ? "justify-end"
+                        : "justify-start"
+                        }`}>
                       {message.role === "assistant" && (
                         <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-white text-zinc-900 shadow-[0_4px_16px_rgba(255,255,255,0.12)]">
                           <Workflow size={15} />
@@ -394,23 +525,200 @@ const HomePage = () => {
                       )}
 
                       <div
-                        className={`max-w-[85%] break-words px-4 py-3 text-sm leading-7 sm:max-w-[75%] ${
-                          message.role === "user"
-                            ? "rounded-2xl rounded-tr-sm bg-gradient-to-br from-violet-600/90 to-indigo-600/90 border border-violet-400/25 text-white shadow-[0_4px_20px_rgba(109,40,217,0.25)]"
-                            : `${darkPanel} rounded-2xl rounded-tl-sm text-zinc-200`
-                        }`}>
-                        {message.image_url && (
-                          <img
-                            src={message.image_url}
-                            alt="Uploaded image"
-                            loading="lazy"
-                            className="mb-3 max-h-64 max-w-full rounded-xl object-contain"
-                          />
-                        )}
-                        {message.content && (
-                          <p className="whitespace-pre-wrap">
-                            {message.content}
-                          </p>
+                        className={`max-w-[85%] break-words px-4 py-3 text-sm leading-7 sm:max-w-[75%] ${message.role === "user"
+                          ? "rounded-2xl rounded-tr-sm bg-gradient-to-br from-violet-600/90 to-indigo-600/90 border border-violet-400/25 text-white shadow-[0_4px_20px_rgba(109,40,217,0.25)]"
+                          : `${darkPanel} rounded-2xl rounded-tl-sm text-zinc-200`
+                          }`}>
+                        {message.interrupted ? (
+                          <div className="flex flex-col gap-3">
+                            <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-2.5">
+                              <div className="flex items-center gap-2">
+                                {message.interrupt?.type ===
+                                  "email_approval" && (
+                                    <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
+                                      <Mail size={15} />
+                                    </div>
+                                  )}
+                                {message.interrupt?.type ===
+                                  "calendar_event_approval" && (
+                                    <div className="flex size-7 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400">
+                                      <Calendar size={15} />
+                                    </div>
+                                  )}
+                                {message.interrupt?.type ===
+                                  "instagram_post_approval" && (
+                                    <div className="flex size-7 items-center justify-center rounded-lg bg-pink-500/20 text-pink-400">
+                                      <Camera size={15} />
+                                    </div>
+                                  )}
+                                <div>
+                                  <span className="font-semibold text-white">
+                                    {message.interrupt?.type ===
+                                      "email_approval"
+                                      ? "Send Email"
+                                      : message.interrupt?.type ===
+                                        "calendar_event_approval"
+                                        ? "Create Calendar Event"
+                                        : "Publish Instagram Post"}
+                                  </span>
+                                  <span className="ml-2 rounded-md border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                                    Approval Required
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <p className="text-xs text-zinc-300">
+                              {message.interrupt?.message ||
+                                "Please review the proposed action and approve or reject it."}
+                            </p>
+
+                            {message.interrupt?.type === "email_approval" && (
+                              <div className="space-y-1.5 rounded-xl border border-white/10 bg-black/25 p-3 text-xs">
+                                <div>
+                                  <span className="text-zinc-500">To: </span>
+                                  <span className="font-mono text-zinc-200">
+                                    {message.interrupt.email?.to}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-zinc-500">Subject: </span>
+                                  <span className="font-medium text-zinc-200">
+                                    {message.interrupt.email?.subject}
+                                  </span>
+                                </div>
+                                <div className="border-t border-white/5 pt-1.5 whitespace-pre-wrap text-zinc-300">
+                                  {message.interrupt.email?.body}
+                                </div>
+                              </div>
+                            )}
+
+                            {message.interrupt?.type ===
+                              "calendar_event_approval" && (
+                                <div className="space-y-1.5 rounded-xl border border-white/10 bg-black/25 p-3 text-xs">
+                                  <div>
+                                    <span className="text-zinc-500">Title: </span>
+                                    <span className="font-medium text-zinc-200">
+                                      {message.interrupt.event?.summary}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-zinc-400">
+                                    <div>
+                                      <span className="text-zinc-500">Start: </span>
+                                      <span>
+                                        {message.interrupt.event?.startDateTime}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-zinc-500">End: </span>
+                                      <span>
+                                        {message.interrupt.event?.endDateTime}
+                                      </span>
+                                    </div>
+                                    {message.interrupt.event?.timeZone && (
+                                      <div>
+                                        <span className="text-zinc-500">TZ: </span>
+                                        <span>
+                                          {message.interrupt.event?.timeZone}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {message.interrupt.event?.description && (
+                                    <div className="border-t border-white/5 pt-1.5 text-zinc-400">
+                                      {message.interrupt.event?.description}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                            {message.interrupt?.type ===
+                              "instagram_post_approval" && (
+                                <div className="space-y-2 rounded-xl border border-white/10 bg-black/25 p-3 text-xs">
+                                  {message.interrupt.post?.imageUrl && (
+                                    <img
+                                      src={message.interrupt.post.imageUrl}
+                                      alt="Instagram preview"
+                                      className="max-h-48 rounded-lg border border-white/10 object-contain"
+                                    />
+                                  )}
+                                  {message.interrupt.post?.caption && (
+                                    <div className="whitespace-pre-wrap text-zinc-300">
+                                      {message.interrupt.post.caption}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                            {message.status === "pending" ? (
+                              <div className="mt-1 flex items-center gap-2.5 pt-1">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={
+                                    approvingIndex !== null ||
+                                    rejectingIndex !== null
+                                  }
+                                  onClick={() => handleApproval(index, true)}
+                                  className="h-8 gap-1.5 rounded-xl bg-emerald-600 px-3.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50">
+                                  {approvingIndex === index ? (
+                                    <Loader2 size={13} className="animate-spin" />
+                                  ) : (
+                                    <Check size={14} />
+                                  )}
+                                  <span>Approve & Proceed</span>
+                                </Button>
+
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={
+                                    approvingIndex !== null ||
+                                    rejectingIndex !== null
+                                  }
+                                  onClick={() => handleApproval(index, false)}
+                                  className="h-8 gap-1.5 rounded-xl border-white/10 bg-white/5 px-3.5 text-xs font-medium text-zinc-300 hover:border-red-500/30 hover:bg-red-500/20 hover:text-red-300 disabled:opacity-50">
+                                  {rejectingIndex === index ? (
+                                    <Loader2 size={13} className="animate-spin" />
+                                  ) : (
+                                    <X size={14} />
+                                  )}
+                                  <span>Reject / Cancel</span>
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="mt-1 flex items-center gap-2 pt-1 text-xs">
+                                {message.status === "approved" ? (
+                                  <span className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-1 text-emerald-400">
+                                    <Check size={13} />
+                                    <span>Action Approved</span>
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/15 px-2.5 py-1 text-red-400">
+                                    <X size={13} />
+                                    <span>Action Rejected</span>
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            {message.image_url && (
+                              <img
+                                src={message.image_url}
+                                alt="Uploaded image"
+                                loading="lazy"
+                                className="mb-3 max-h-64 max-w-full rounded-xl object-contain"
+                              />
+                            )}
+                            {message.content && (
+                              <p className="whitespace-pre-wrap">
+                                {message.content}
+                              </p>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -565,18 +873,33 @@ const HomePage = () => {
                     </DropdownMenu>
                   </div>
 
-                  <Button
-                    type="submit"
-                    disabled={
-                      (!input.trim() && !selectedImage) ||
-                      chatLoading ||
-                      imageUploading
-                    }
-                    size="icon"
-                    aria-label="Send message"
-                    className="size-8 rounded-xl bg-white text-zinc-900 shadow-sm transition hover:bg-zinc-200 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none">
-                    <ArrowUp size={16} />
-                  </Button>
+                  <div className="flex gap-5">
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleNewChat}
+                      title="Start a new chat"
+                      className="h-9 gap-1.5 rounded-xl border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white">
+                      <SquarePen size={15} />
+                      <span className="hidden sm:inline">New Chat</span>
+                    </Button>
+
+                    <Button
+                      type="submit"
+                      disabled={
+                        (!input.trim() && !selectedImage) ||
+                        chatLoading ||
+                        imageUploading
+                      }
+                      size="icon"
+                      aria-label="Send message"
+                      className="size-8 rounded-xl bg-white text-zinc-900 shadow-sm transition hover:bg-zinc-200 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none">
+                      <ArrowUp size={16} />
+                    </Button>
+
+                  </div>
+
                 </div>
               </form>
             </div>

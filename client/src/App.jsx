@@ -10,6 +10,7 @@ import Integration from "./pages/Integration";
 import CreateAgent from "./pages/CreateAgent";
 import { setAgents } from "./redux/agentSlice";
 import { getAllAgents } from "./features/agent";
+import Pricing from "./pages/Pricing";
 
 const App = () => {
   const dispatch = useDispatch();
@@ -75,6 +76,12 @@ const App = () => {
           path="/integration"
           element={
             userData ? <Integration /> : <Navigate to="/login" replace />
+          }
+        />
+        <Route
+          path="/pricing"
+          element={
+            userData ? <Pricing /> : <Navigate to="/login" replace />
           }
         />
         <Route

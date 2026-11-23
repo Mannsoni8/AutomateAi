@@ -7,12 +7,14 @@ import {
   START,
   MessagesAnnotation,
   StateGraph,
+  interrupt,
+  Command,
 } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { getMcpTools } from "../mcp/langgrap-mcp.js";
 import { DynamicStructuredTool } from "@langchain/core/tools";
-import z from "zod";
+import { z } from "zod";
 import jwt from "jsonwebtoken";
 import { invokeWithRateLimitRetry } from "./retry.js";
 import { sanitizeMessages } from "./sanitizeMessages.js";
@@ -49,29 +51,66 @@ const makeAuthToken = (userId) => {
   });
 };
 
+const GEMINI_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
+];
+
 const generateCaption = async (imageUrl) => {
   try {
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      throw new Error(`Failed to fetch image. Status: ${imageResponse.status}`);
+    const url = new URL(imageUrl);
+
+    if (url.protocol !== "https:") {
+      throw new Error("Image must use HTTPS");
     }
 
-    const arrayBuffer = await imageResponse.arrayBuffer();
-    const base64image = Buffer.from(arrayBuffer).toString("base64");
-    const contentType =
-      imageResponse.headers.get("content-type") || "image/jpeg";
-
-    const imageAnalyzer = new ChatGoogle({
-      model: "gemini-4-hydrogen",
-      temperature: 0,
-      maxRetries: 2,
+    const imageResponse = await fetch(imageUrl, {
+      signal: AbortSignal.timeout(15000),
     });
+
+    if (!imageResponse.ok) {
+      throw new Error(
+        `Image fetch failed: ${imageResponse.status}`
+      );
+    }
+
+    const contentType = imageResponse.headers
+      .get("content-type")
+      ?.split(";")[0]
+      ?.trim()
+      ?.toLowerCase();
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
+      throw new Error("Unsupported image content type");
+    }
+
+    const maxBytes = 10 * 1024 * 1024;
+    const chunks = [];
+    let totalBytes = 0;
+
+    if (!imageResponse.body) {
+      throw new Error("Empty image response");
+    }
+
+    for await (const chunk of imageResponse.body) {
+      totalBytes += chunk.length;
+
+      if (totalBytes > maxBytes) {
+        await imageResponse.body.cancel().catch(() => { });
+        throw new Error("Image exceeds 10 MB");
+      }
+
+      chunks.push(Buffer.from(chunk));
+    }
+
+    const base64image = Buffer.concat(chunks).toString("base64");
 
     const message = new HumanMessage({
       content: [
         {
           type: "text",
-          text: `Analyze this image and generate a catchy social media caption with relevant hashtags. STRICT RULE: Do not include any greetings, introductory text, explanations, or conversational filler (like 'Sure, here is...', 'Here is a caption'). Output ONLY the caption and hashtags.`,
+          text: `Analyze this image and generate a catchy Instagram caption with relevant hashtags. Output ONLY the caption and hashtags. No introductions or explanations.`,
         },
         {
           type: "image_url",
@@ -79,12 +118,62 @@ const generateCaption = async (imageUrl) => {
         },
       ],
     });
-    const response = await imageAnalyzer.invoke([message]);
 
-    return typeof response.content === "string" ? response.content.trim() : "";
+    let lastError;
+
+    for (const model of GEMINI_MODELS) {
+      try {
+        console.log(`Trying Gemini model: ${model}`);
+
+        const analyzer = new ChatGoogle({
+          model,
+          temperature: 0,
+          maxRetries: 0,
+        });
+
+        const response = await analyzer.invoke([message]);
+
+        const caption =
+          typeof response.content === "string"
+            ? response.content.trim()
+            : "";
+
+        if (!caption) {
+          throw new Error("Gemini returned an empty caption");
+        }
+
+        console.log(`Caption generated using ${model}`);
+
+        return caption.slice(0, 2200);
+      } catch (error) {
+        lastError = error;
+
+        const status = Number(
+          error.status ??
+          error.statusCode ??
+          error.response?.status
+        );
+
+        const temporary =
+          [429, 500, 502, 503, 504].includes(status) ||
+          /high demand|overloaded|temporarily unavailable|resource exhausted|rate limit/i.test(
+            error.message || ""
+          );
+
+        if (!temporary) {
+          throw error;
+        }
+
+        console.warn(
+          `Gemini ${model} temporarily unavailable. Trying fallback.`
+        );
+      }
+    }
+
+    throw lastError || new Error("All Gemini models failed");
   } catch (error) {
-    console.error("Caption generation error:", error.message || error);
-    return "";
+    console.error("Caption generation error:", error.message);
+    throw error;
   }
 };
 
@@ -104,11 +193,9 @@ const limitMessageContext = (message, maxChar = 2000) => {
 
 export const createAgentGraph = async (agent, userId) => {
   const mcpTools = await getMcpTools();
-  console.log(mcpTools);
 
   const webSearchMcpTool = findTool(mcpTools, [
     "web_search",
-    // "automate_web_search",
     "autoMate_web_search",
   ]);
 
@@ -119,8 +206,6 @@ export const createAgentGraph = async (agent, userId) => {
 
   const createEventMcpTool = findTool(mcpTools, [
     "create_calendar_event",
-    // "create_calender_event",
-    // "creat_calender_event",
     "autoMate_create_calendar_event",
   ]);
 
@@ -131,7 +216,6 @@ export const createAgentGraph = async (agent, userId) => {
 
   const listCalenderEventsMcpTool = findTool(mcpTools, [
     "list_calendar_events",
-    // "list_calender_event",
     "autoMate_list_calendar_event",
   ]);
 
@@ -181,7 +265,7 @@ export const createAgentGraph = async (agent, userId) => {
 
         Never ask for authentication tokens, API keys, passwords, or user IDs.
  
-        The application will request explicit approval before sending the email.
+        IMPORTANT: Call this tool immediately when the user asks to send an email. Do not ask for confirmation in your text response before calling this tool; the system UI handles user approval automatically upon invocation.
          `,
         schema: z.object({
           to: z.string().email().describe("recipient email address"),
@@ -225,7 +309,7 @@ export const createAgentGraph = async (agent, userId) => {
            - If an essential meeting time is missing and cannot be inferred,
          ask the user instead of inventing a time.
 
-         The application requires explicit approval before creating an event.
+         IMPORTANT: Call this tool immediately when the user requests creating or scheduling an event. Do not ask for confirmation in your text response before calling this tool; the system UI handles user approval automatically upon invocation.
 `,
         schema: z.object({
           summary: z.string().trim().min(1).max(200).describe("event title"),
@@ -376,6 +460,7 @@ Date and time rules:
         Publish an image to the authenticated user's connected Instagram account.
         Use only when the user explicitly requests publishing or posting to Instagram.
         Requires a valid public HTTPS imageUrl and an optional caption.
+        IMPORTANT: Call this tool immediately when the user requests publishing to Instagram. Do not ask for confirmation in your text response before calling this tool; the system UI handles user approval automatically upon invocation.
         `,
         schema: z.object({
           imageUrl: z
@@ -431,33 +516,22 @@ Context & Rules:
 - Current timestamp in Asia/Kolkata: ${currentDateTime}
 - Timezone: Asia/Kolkata. Default event duration: 30 minutes.
 - Resolve relative dates (today, tomorrow, weekdays) using the current timestamp.
-- When an action is directly requested, call the appropriate tool.
+- Immediate Tool Invocations:
+  * When the user requests creating a calendar event, sending an email, or publishing a post to Instagram, you MUST call the appropriate tool (create_calendar_event, send_email, publish_instagram_post) IMMEDIATELY with the extracted parameters.
+  * DO NOT ask the user for confirmation in chat text (e.g., do NOT say "Would you like me to create this event?", "Should I proceed?", or "I am ready to create..."). The system automatically intercepts the tool call and displays an interactive approval UI card for the user.
+  * Your responsibility is to call the tool directly.
 - When a user message includes an "Attached image URL: https://..." line, treat it as the public image attached to that turn.
-- If the user explicitly asks to publish that image on Instagram, call publish_instagram_post with the exact attached URL as imageUrl; do not ask them to provide the URL again.
-- Never publish an Instagram post without explicit user confirmation.
+- If the user asks to publish that image on Instagram, call publish_instagram_post with the exact attached URL as imageUrl immediately.
 - Never ask for passwords, API keys, tokens, or user IDs.
 - Never fabricate search results or tool confirmations.
 - Be concise, accurate, and helpful.
 `;
 
   const approvalTools = new Set([
+    "send_email",
+    "create_calendar_event",
     "publish_instagram_post",
-    "publish_instagram_image",
   ]);
-
-  const checkHistoryConfirmation = (messages = []) => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      const isHuman =
-        msg._getType?.() === "human" ||
-        msg.role === "user" ||
-        msg.name === "user";
-      if (isHuman && typeof msg.content === "string") {
-        return isExplicitConfirmation(msg.content);
-      }
-    }
-    return false;
-  };
 
   const chatNode = async (state) => {
     const cleanMessages = sanitizeMessages(state.messages || []);
@@ -478,38 +552,197 @@ Context & Rules:
   const actionApprovalNode = async (state) => {
     const messages = state.messages || [];
     const lastMessage = messages[messages.length - 1];
-    const toolCall = lastMessage?.tool_calls?.find((call) =>
-      approvalTools.has(call.name),
-    );
 
-    if (!toolCall) {
+    // Find approval-protected tool calls
+    const protectedToolCalls =
+      lastMessage?.tool_calls?.filter((call) =>
+        approvalTools.has(call.name),
+      ) || [];
+
+    if (protectedToolCalls.length === 0) {
       return state;
     }
 
-    const confirmed = checkHistoryConfirmation(messages.slice(0, -1));
-    if (confirmed) {
-      return state;
+    if (protectedToolCalls.length > 1) {
+      return {
+        messages: protectedToolCalls.map(
+          (call) =>
+            new ToolMessage({
+              tool_call_id: call.id,
+              content: JSON.stringify({
+                success: false,
+                message: "Please request one approval-protected action at a time.",
+              }),
+            }),
+        ),
+      };
     }
 
-    let { imageUrl, caption } = toolCall.args || {};
-    if (!caption && imageUrl) {
-      try {
-        caption = await generateCaption(imageUrl);
-      } catch (e) {
-        console.warn("Caption generation in approval preview failed:", e);
+    const actionCall = protectedToolCalls[0];
+    const args = actionCall.args || {};
+
+    if (actionCall.name === "send_email") {
+      const { to, subject, body } = args;
+
+      if (
+        typeof to !== "string" ||
+        typeof subject !== "string" ||
+        typeof body !== "string" ||
+        !to.trim() ||
+        !subject.trim() ||
+        !body.trim()
+      ) {
+        return {
+          messages: [
+            new ToolMessage({
+              tool_call_id: actionCall.id,
+              content: JSON.stringify({
+                success: false,
+                message: "Please provide a valid recipient email, subject, and body.",
+              }),
+            }),
+          ],
+        };
       }
+
+      const decision = interrupt({
+        type: "email_approval",
+        action: "send_email",
+        tool_call_id: actionCall.id,
+        email: { to: to.trim(), subject: subject.trim(), body: body.trim() },
+        message: `Please review and approve sending this email to ${to.trim()}.`,
+      });
+
+      if (!decision || decision.approved !== true) {
+        return {
+          messages: [
+            new ToolMessage({
+              tool_call_id: actionCall.id,
+              content: JSON.stringify({
+                success: false,
+                rejected: true,
+                message: decision?.reason || "Sending email was cancelled by user.",
+              }),
+            }),
+          ],
+        };
+      }
+
+      return {};
     }
 
-    const captionDisplay = caption ? `\n\n**Proposed Caption:**\n${caption}` : "";
-    const imageDisplay = imageUrl ? `\n\n**Image:** ${imageUrl}` : "";
+    if (actionCall.name === "create_calendar_event") {
+      const { summary, description, startDateTime, endDateTime, timeZone } =
+        args;
 
-    const previewMessage = new AIMessage({
-      content: `I've prepared your Instagram post!${imageDisplay}${captionDisplay}\n\n⚠️ **Confirmation Required:**\nWould you like me to publish this post to your Instagram account?\nPlease reply **"Yes"** or **"Confirm"** to proceed.`,
-    });
+      if (
+        typeof summary !== "string" ||
+        !summary.trim() ||
+        !startDateTime ||
+        !endDateTime
+      ) {
+        return {
+          messages: [
+            new ToolMessage({
+              tool_call_id: actionCall.id,
+              content: JSON.stringify({
+                success: false,
+                message: "Please provide valid event summary, start time, and end time.",
+              }),
+            }),
+          ],
+        };
+      }
 
-    return {
-      messages: [previewMessage],
-    };
+      const decision = interrupt({
+        type: "calendar_event_approval",
+        action: "create_calendar_event",
+        tool_call_id: actionCall.id,
+        event: {
+          summary: summary.trim(),
+          description: description || "",
+          startDateTime,
+          endDateTime,
+          timeZone: timeZone || "Asia/Kolkata",
+        },
+        message: `Please review and approve creating the calendar event: "${summary.trim()}".`,
+      });
+
+      if (!decision || decision.approved !== true) {
+        return {
+          messages: [
+            new ToolMessage({
+              tool_call_id: actionCall.id,
+              content: JSON.stringify({
+                success: false,
+                rejected: true,
+                message: decision?.reason || "Calendar event creation was cancelled by user.",
+              }),
+            }),
+          ],
+        };
+      }
+
+      return {};
+    }
+
+    if (actionCall.name === "publish_instagram_post") {
+      const { imageUrl, caption } = args;
+
+      if (typeof imageUrl !== "string" || !imageUrl.trim()) {
+        return {
+          messages: [
+            new ToolMessage({
+              tool_call_id: actionCall.id,
+              content: JSON.stringify({
+                success: false,
+                message: "Invalid Instagram post details. A valid HTTPS image URL is required.",
+              }),
+            }),
+          ],
+        };
+      }
+
+      let postCaption = typeof caption === "string" ? caption.trim() : "";
+      if (!postCaption && imageUrl) {
+        try {
+          postCaption = await generateCaption(imageUrl);
+          actionCall.args.caption = postCaption;
+        } catch (e) {
+          console.warn("Caption generation preview failed:", e.message || e);
+        }
+      }
+
+      const decision = interrupt({
+        type: "instagram_post_approval",
+        action: "publish_instagram_post",
+        tool_call_id: actionCall.id,
+        post: {
+          imageUrl: imageUrl.trim(),
+          caption: postCaption || "",
+        },
+        message: "Please review and approve publishing this post to Instagram.",
+      });
+
+      if (!decision || decision.approved !== true) {
+        return {
+          messages: [
+            new ToolMessage({
+              tool_call_id: actionCall.id,
+              content: JSON.stringify({
+                success: false,
+                rejected: true,
+                message: decision?.reason || "Instagram post publication was cancelled by user.",
+              }),
+            }),
+          ],
+        };
+      }
+
+      return {};
+    }
+
+    return state;
   };
 
   const routeAfterChat = (state) => {
@@ -529,9 +762,15 @@ Context & Rules:
   const routeAfterApproval = (state) => {
     const messages = state.messages || [];
     const lastMessage = messages[messages.length - 1];
+
+    if (lastMessage instanceof ToolMessage) {
+      return "chatNode"
+    }
+
     if (!lastMessage?.tool_calls || lastMessage.tool_calls.length === 0) {
       return END;
     }
+
     return "tools";
   };
 
