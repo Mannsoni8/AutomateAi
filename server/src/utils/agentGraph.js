@@ -126,8 +126,6 @@ const generateCaption = async (imageUrl) => {
 
     for (const model of GEMINI_MODELS) {
       try {
-        console.log(`Trying Gemini model: ${model}`);
-
         const analyzer = new ChatGoogle({
           model,
           temperature: 0,
@@ -142,8 +140,6 @@ const generateCaption = async (imageUrl) => {
         if (!caption) {
           throw new Error("Gemini returned an empty caption");
         }
-
-        console.log(`Caption generated using ${model}`);
 
         return caption.slice(0, 2200);
       } catch (error) {

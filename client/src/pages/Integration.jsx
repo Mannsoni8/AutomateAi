@@ -132,9 +132,6 @@ const Integration = () => {
   const fetchAllIntegrations = async () => {
     try {
       const response = await getAllIntegrations();
-
-      console.log("Integrations response:", response);
-
       setIntegrations(response.data ?? {});
     } catch (error) {
       console.error("Failed to fetch integrations:", error);

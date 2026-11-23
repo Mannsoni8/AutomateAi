@@ -81,14 +81,12 @@ const CreateAgent = () => {
     setLoading(true);
 
     try {
-      const data = await createAgent({
+      await createAgent({
         name: name.trim(),
         instructions,
         knowledgeBase,
         tools,
       });
-
-      console.log("Agent created successfully:", data);
 
       // Redirect to agents page after successful creation
       navigate("/agents", { replace: true });

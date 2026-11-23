@@ -30,10 +30,9 @@ export function LoginForm({ className, ...props }) {
       const result = await signInWithPopup(auth, googleProvider);
       const token = await result.user.getIdToken();
       const data = await login(token);
-      console.log(data);
       dispatch(setUserData(data?.user || data));
     } catch (error) {
-      console.log(error);
+      console.error("Login failed:", error);
     }
   };
 

@@ -66,7 +66,7 @@ const Agents = () => {
       await deleteAgent(id);
       dispatch(setDelete(id));
     } catch (error) {
-      console.log(error);
+      console.error("Failed to delete agent:", error);
     }
   };
 

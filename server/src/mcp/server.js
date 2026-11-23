@@ -829,8 +829,6 @@ IMPORTANT:
 
       for (const model of GEMINI_MODELS) {
         try {
-          console.log(`Trying Gemini model: ${model}`);
-
           const analyzer = new ChatGoogle({
             model,
             temperature: 0,
@@ -857,8 +855,6 @@ IMPORTANT:
           if (!analysisText) {
             throw new Error("Gemini returned an empty image analysis");
           }
-
-          console.log(`Image analysis completed using ${model}`);
 
           return {
             content: [

@@ -57,8 +57,6 @@ export const googleCallbackController = async (req, res) => {
 
     const { tokens } = await googleOauthClient.getToken(code);
 
-    console.log("2. Tokens received:", Boolean(tokens?.access_token));
-
     if (!tokens?.access_token) {
       return res.status(400).json({
         success: false,
@@ -67,7 +65,6 @@ export const googleCallbackController = async (req, res) => {
     }
 
     googleOauthClient.setCredentials(tokens);
-    console.log("3. Credentials set");
 
     const oauth2 = google.oauth2({
       version: "v2",
@@ -75,7 +72,6 @@ export const googleCallbackController = async (req, res) => {
     });
 
     const { data: profile } = await oauth2.userinfo.get();
-    console.log("4. Profile received:", Boolean(profile?.id));
 
     if (!profile.id || !profile.email) {
       return res.status(400).json({
@@ -92,8 +88,6 @@ export const googleCallbackController = async (req, res) => {
     let connection = await integrationModel
       .findOne(filter)
       .select("+tokens.accessToken +tokens.refreshToken");
-
-    console.log("5. Database query completed");
 
     if (!connection) {
       connection = new integrationModel({
@@ -136,8 +130,6 @@ export const googleCallbackController = async (req, res) => {
 
     // Save to MongoDB
     await connection.save();
-
-    console.log("6. Integration saved successfully");
 
     return res.redirect(`${config.FRONTED_URL}/integration?google=connected`);
   } catch (error) {
