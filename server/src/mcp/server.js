@@ -22,6 +22,9 @@ import { HumanMessage } from "@langchain/core/messages";
 import { ChatGoogle } from "@langchain/google";
 
 const GEMINI_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.8-flash-lite",
+  "gemini-3.8-pro",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
   "gemini-2.5-pro",
@@ -873,8 +876,8 @@ IMPORTANT:
           );
 
           const temporary =
-            [429, 500, 502, 503, 504].includes(status) ||
-            /high demand|overloaded|temporarily unavailable|resource exhausted|rate limit/i.test(
+            [404, 429, 500, 502, 503, 504].includes(status) ||
+            /high demand|overloaded|temporarily unavailable|resource exhausted|rate limit|no longer available|not found|deprecated/i.test(
               error.message || "",
             );
 

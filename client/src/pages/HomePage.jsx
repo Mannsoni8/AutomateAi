@@ -237,7 +237,9 @@ const HomePage = () => {
         const text =
           typeof response === "string"
             ? response
-            : response?.content || response?.response || JSON.stringify(response);
+            : response?.content ||
+              response?.response ||
+              JSON.stringify(response);
 
         setMessages((prev) => [
           ...prev,
@@ -310,7 +312,9 @@ const HomePage = () => {
         const text =
           typeof response === "string"
             ? response
-            : response?.content || response?.response || JSON.stringify(response);
+            : response?.content ||
+              response?.response ||
+              JSON.stringify(response);
 
         if (text) {
           setMessages((prev) => [
@@ -377,16 +381,6 @@ const HomePage = () => {
             </span>
           </Link>
           <div className="flex items-center gap-2.5">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleNewChat}
-              title="Start a new chat"
-              className="h-9 gap-1.5 rounded-xl border border-white/10 bg-white/[0.05] px-3 text-xs font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white">
-              <SquarePen size={15} />
-              <span className="hidden sm:inline">New Chat</span>
-            </Button>
-
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button variant="outline" className={iconBtn} />}>
@@ -514,10 +508,11 @@ const HomePage = () => {
                   messages.map((message, index) => (
                     <div
                       key={index}
-                      className={`flex w-full items-start gap-3 ${message.role === "user"
-                        ? "justify-end"
-                        : "justify-start"
-                        }`}>
+                      className={`flex w-full items-start gap-3 ${
+                        message.role === "user"
+                          ? "justify-end"
+                          : "justify-start"
+                      }`}>
                       {message.role === "assistant" && (
                         <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-white text-zinc-900 shadow-[0_4px_16px_rgba(255,255,255,0.12)]">
                           <Workflow size={15} />
@@ -525,39 +520,40 @@ const HomePage = () => {
                       )}
 
                       <div
-                        className={`max-w-[85%] break-words px-4 py-3 text-sm leading-7 sm:max-w-[75%] ${message.role === "user"
-                          ? "rounded-2xl rounded-tr-sm bg-gradient-to-br from-violet-600/90 to-indigo-600/90 border border-violet-400/25 text-white shadow-[0_4px_20px_rgba(109,40,217,0.25)]"
-                          : `${darkPanel} rounded-2xl rounded-tl-sm text-zinc-200`
-                          }`}>
+                        className={`max-w-[85%] break-words px-4 py-3 text-sm leading-7 sm:max-w-[75%] ${
+                          message.role === "user"
+                            ? "rounded-2xl rounded-tr-sm bg-gradient-to-br from-violet-600/90 to-indigo-600/90 border border-violet-400/25 text-white shadow-[0_4px_20px_rgba(109,40,217,0.25)]"
+                            : `${darkPanel} rounded-2xl rounded-tl-sm text-zinc-200`
+                        }`}>
                         {message.interrupted ? (
                           <div className="flex flex-col gap-3">
                             <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-2.5">
                               <div className="flex items-center gap-2">
                                 {message.interrupt?.type ===
                                   "email_approval" && (
-                                    <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
-                                      <Mail size={15} />
-                                    </div>
-                                  )}
+                                  <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
+                                    <Mail size={15} />
+                                  </div>
+                                )}
                                 {message.interrupt?.type ===
                                   "calendar_event_approval" && (
-                                    <div className="flex size-7 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400">
-                                      <Calendar size={15} />
-                                    </div>
-                                  )}
+                                  <div className="flex size-7 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400">
+                                    <Calendar size={15} />
+                                  </div>
+                                )}
                                 {message.interrupt?.type ===
                                   "instagram_post_approval" && (
-                                    <div className="flex size-7 items-center justify-center rounded-lg bg-pink-500/20 text-pink-400">
-                                      <Camera size={15} />
-                                    </div>
-                                  )}
+                                  <div className="flex size-7 items-center justify-center rounded-lg bg-pink-500/20 text-pink-400">
+                                    <Camera size={15} />
+                                  </div>
+                                )}
                                 <div>
                                   <span className="font-semibold text-white">
                                     {message.interrupt?.type ===
-                                      "email_approval"
+                                    "email_approval"
                                       ? "Send Email"
                                       : message.interrupt?.type ===
-                                        "calendar_event_approval"
+                                          "calendar_event_approval"
                                         ? "Create Calendar Event"
                                         : "Publish Instagram Post"}
                                   </span>
@@ -582,7 +578,9 @@ const HomePage = () => {
                                   </span>
                                 </div>
                                 <div>
-                                  <span className="text-zinc-500">Subject: </span>
+                                  <span className="text-zinc-500">
+                                    Subject:{" "}
+                                  </span>
                                   <span className="font-medium text-zinc-200">
                                     {message.interrupt.email?.subject}
                                   </span>
@@ -595,60 +593,64 @@ const HomePage = () => {
 
                             {message.interrupt?.type ===
                               "calendar_event_approval" && (
-                                <div className="space-y-1.5 rounded-xl border border-white/10 bg-black/25 p-3 text-xs">
+                              <div className="space-y-1.5 rounded-xl border border-white/10 bg-black/25 p-3 text-xs">
+                                <div>
+                                  <span className="text-zinc-500">Title: </span>
+                                  <span className="font-medium text-zinc-200">
+                                    {message.interrupt.event?.summary}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-zinc-400">
                                   <div>
-                                    <span className="text-zinc-500">Title: </span>
-                                    <span className="font-medium text-zinc-200">
-                                      {message.interrupt.event?.summary}
+                                    <span className="text-zinc-500">
+                                      Start:{" "}
+                                    </span>
+                                    <span>
+                                      {message.interrupt.event?.startDateTime}
                                     </span>
                                   </div>
-                                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-zinc-400">
-                                    <div>
-                                      <span className="text-zinc-500">Start: </span>
-                                      <span>
-                                        {message.interrupt.event?.startDateTime}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      <span className="text-zinc-500">End: </span>
-                                      <span>
-                                        {message.interrupt.event?.endDateTime}
-                                      </span>
-                                    </div>
-                                    {message.interrupt.event?.timeZone && (
-                                      <div>
-                                        <span className="text-zinc-500">TZ: </span>
-                                        <span>
-                                          {message.interrupt.event?.timeZone}
-                                        </span>
-                                      </div>
-                                    )}
+                                  <div>
+                                    <span className="text-zinc-500">End: </span>
+                                    <span>
+                                      {message.interrupt.event?.endDateTime}
+                                    </span>
                                   </div>
-                                  {message.interrupt.event?.description && (
-                                    <div className="border-t border-white/5 pt-1.5 text-zinc-400">
-                                      {message.interrupt.event?.description}
+                                  {message.interrupt.event?.timeZone && (
+                                    <div>
+                                      <span className="text-zinc-500">
+                                        TZ:{" "}
+                                      </span>
+                                      <span>
+                                        {message.interrupt.event?.timeZone}
+                                      </span>
                                     </div>
                                   )}
                                 </div>
-                              )}
+                                {message.interrupt.event?.description && (
+                                  <div className="border-t border-white/5 pt-1.5 text-zinc-400">
+                                    {message.interrupt.event?.description}
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             {message.interrupt?.type ===
                               "instagram_post_approval" && (
-                                <div className="space-y-2 rounded-xl border border-white/10 bg-black/25 p-3 text-xs">
-                                  {message.interrupt.post?.imageUrl && (
-                                    <img
-                                      src={message.interrupt.post.imageUrl}
-                                      alt="Instagram preview"
-                                      className="max-h-48 rounded-lg border border-white/10 object-contain"
-                                    />
-                                  )}
-                                  {message.interrupt.post?.caption && (
-                                    <div className="whitespace-pre-wrap text-zinc-300">
-                                      {message.interrupt.post.caption}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                              <div className="space-y-2 rounded-xl border border-white/10 bg-black/25 p-3 text-xs">
+                                {message.interrupt.post?.imageUrl && (
+                                  <img
+                                    src={message.interrupt.post.imageUrl}
+                                    alt="Instagram preview"
+                                    className="max-h-48 rounded-lg border border-white/10 object-contain"
+                                  />
+                                )}
+                                {message.interrupt.post?.caption && (
+                                  <div className="whitespace-pre-wrap text-zinc-300">
+                                    {message.interrupt.post.caption}
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             {message.status === "pending" ? (
                               <div className="mt-1 flex items-center gap-2.5 pt-1">
@@ -662,7 +664,10 @@ const HomePage = () => {
                                   onClick={() => handleApproval(index, true)}
                                   className="h-8 gap-1.5 rounded-xl bg-emerald-600 px-3.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50">
                                   {approvingIndex === index ? (
-                                    <Loader2 size={13} className="animate-spin" />
+                                    <Loader2
+                                      size={13}
+                                      className="animate-spin"
+                                    />
                                   ) : (
                                     <Check size={14} />
                                   )}
@@ -680,7 +685,10 @@ const HomePage = () => {
                                   onClick={() => handleApproval(index, false)}
                                   className="h-8 gap-1.5 rounded-xl border-white/10 bg-white/5 px-3.5 text-xs font-medium text-zinc-300 hover:border-red-500/30 hover:bg-red-500/20 hover:text-red-300 disabled:opacity-50">
                                   {rejectingIndex === index ? (
-                                    <Loader2 size={13} className="animate-spin" />
+                                    <Loader2
+                                      size={13}
+                                      className="animate-spin"
+                                    />
                                   ) : (
                                     <X size={14} />
                                   )}
@@ -874,7 +882,6 @@ const HomePage = () => {
                   </div>
 
                   <div className="flex gap-5">
-
                     <Button
                       type="button"
                       variant="outline"
@@ -897,9 +904,7 @@ const HomePage = () => {
                       className="size-8 rounded-xl bg-white text-zinc-900 shadow-sm transition hover:bg-zinc-200 hover:text-zinc-900 disabled:opacity-30 disabled:pointer-events-none">
                       <ArrowUp size={16} />
                     </Button>
-
                   </div>
-
                 </div>
               </form>
             </div>
