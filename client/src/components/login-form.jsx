@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { cn } from "cn";
 
 import { Button } from "@/components/ui/button";
@@ -8,24 +9,25 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Field,
-  // FieldDescription,
-  FieldGroup,
-  // FieldLabel,
-  // FieldSeparator,
-} from "@/components/ui/field";
+import { Field, FieldGroup } from "@/components/ui/field";
 import { FcGoogle } from "react-icons/fc";
+import { Loader2 } from "lucide-react";
 import { signInWithPopup } from "firebase/auth";
 import { auth, googleProvider } from "@/firebase";
 import { login } from "@/features/auth.js";
 import { useDispatch } from "react-redux";
 import { setUserData } from "@/redux/userSlice.js";
-// import { Input } from "@/components/ui/input"
 
 export function LoginForm({ className, ...props }) {
   const dispatch = useDispatch();
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
   const handelGoogleLogin = async () => {
+    if (loading) return;
+    setErrorMsg("");
+    setLoading(true);
+
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const token = await result.user.getIdToken();
@@ -33,6 +35,27 @@ export function LoginForm({ className, ...props }) {
       dispatch(setUserData(data?.user || data));
     } catch (error) {
       console.error("Login failed:", error);
+      if (error?.code === "auth/cancelled-popup-request") {
+        // Ignored: harmless user cancellation / re-click
+        return;
+      }
+      if (error?.code === "auth/popup-closed-by-user") {
+        setErrorMsg("Sign-in popup was closed before completion.");
+        return;
+      }
+      if (error?.code === "auth/unauthorized-domain") {
+        setErrorMsg(
+          "This domain is not authorized in Firebase Console. Please add it to Authentication > Settings > Authorized domains.",
+        );
+        return;
+      }
+      setErrorMsg(
+        error.response?.data?.message ||
+          error.message ||
+          "Failed to sign in with Google. Please try again.",
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -50,63 +73,35 @@ export function LoginForm({ className, ...props }) {
         <CardContent className="pt-4">
           <form>
             <FieldGroup>
+              {errorMsg && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                  {errorMsg}
+                </div>
+              )}
               <Field>
-                {/* <Button variant="outline" type="button">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                    <path
-                      d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"
-                      fill="currentColor"
-                    />
-                  </svg>
-                  Login with Apple
-                </Button> */}
                 <Button
                   onClick={handelGoogleLogin}
+                  disabled={loading}
                   variant="outline"
                   type="button"
-                  className="h-12 w-full rounded-xl border-white/15 bg-white/[0.04] text-sm font-medium text-white transition hover:border-violet-400/50 hover:bg-white/[0.08] hover:text-white">
-                  <FcGoogle />
-                  Login with Google
+                  className="h-12 w-full rounded-xl border-white/15 bg-white/[0.04] text-sm font-medium text-white transition hover:border-violet-400/50 hover:bg-white/[0.08] hover:text-white disabled:opacity-50">
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin text-violet-400" />
+                      Signing in...
+                    </>
+                  ) : (
+                    <>
+                      <FcGoogle />
+                      Login with Google
+                    </>
+                  )}
                 </Button>
-              </Field>
-              {/* <FieldSeparator className="*:data-[slot=field-separator-content]:bg-card">
-                Or continue with
-              </FieldSeparator> */}
-              {/* <Field>
-                <FieldLabel htmlFor="email">Email</FieldLabel>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="m@example.com"
-                  required
-                />
-              </Field>
-              <Field>
-                <div className="flex items-center">
-                  <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <a
-                    href="#"
-                    className="ml-auto text-sm underline-offset-4 hover:underline"
-                  >
-                    Forgot your password?
-                  </a>
-                </div>
-                <Input id="password" type="password" required />
-              </Field> */}
-              <Field>
-                {/* <Button type="submit">Login</Button> */}
-                {/* <FieldDescription className="text-center">
-                  Don&apos;t have an account? <a href="#">Sign up</a>
-                </FieldDescription> */}
               </Field>
             </FieldGroup>
           </form>
         </CardContent>
       </Card>
-      {/* <FieldDescription className="px-6 text-center">
-        By clicking continue, you agree to our <a href="#">Terms of Service</a>{" "}
-        and <a href="#">Privacy Policy</a>.
-      </FieldDescription> */}
     </div>
   );
 }

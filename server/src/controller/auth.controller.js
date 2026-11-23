@@ -44,9 +44,20 @@ export const loginController = async (req, res) => {
       },
       {
         upsert: true,
-        returnDocument: "after",
+        new: true,
+        setDefaultsOnInsert: true,
       },
     );
+
+    if (!user) {
+      console.error("User could not be created or updated");
+      return res.status(500).json({ message: "Failed to create or retrieve user profile" });
+    }
+
+    if (!config.JWT_SECRET) {
+      console.error("FATAL: JWT_SECRET environment variable is missing!");
+      return res.status(500).json({ message: "Server configuration error: JWT_SECRET is not configured" });
+    }
 
     const token = jwt.sign({ userId: user._id }, config.JWT_SECRET, {
       expiresIn: "7d",
@@ -62,8 +73,10 @@ export const loginController = async (req, res) => {
       user,
     });
   } catch (error) {
-    console.error("Login controller error:", error.message);
-    return res.status(500).json({ message: "Internal server error during login" });
+    console.error("Login controller error:", error);
+    return res.status(500).json({
+      message: error.message || "Internal server error during login",
+    });
   }
 };
 
