@@ -8,24 +8,39 @@ import { createAgent } from "../features/agent";
 
 const availableTools = [
   {
-    id: "calculator",
-    name: "Calculator",
-    description: "Perform mathematical calculations",
-  },
-  {
-    id: "web.search",
+    id: "web_search",
     name: "Web Search",
-    description: "Search for information on the web",
+    description: "Search the web for up-to-date information, news, and research",
   },
   {
-    id: "gmail.read",
+    id: "send_email",
+    name: "Send Email",
+    description: "Draft and send emails using connected Google Gmail account",
+  },
+  {
+    id: "list_emails",
     name: "Read Emails",
-    description: "Read and summarize emails",
+    description: "Search, read, and summarize emails from connected Gmail inbox",
   },
   {
-    id: "gmail.send",
-    name: "Send Emails",
-    description: "Draft and send emails",
+    id: "create_calendar_event",
+    name: "Create Calendar Events",
+    description: "Schedule meetings and create events in primary Google Calendar",
+  },
+  {
+    id: "list_calendar_events",
+    name: "List Calendar Events",
+    description: "View and check upcoming meetings and schedule on Google Calendar",
+  },
+  {
+    id: "publish_instagram_post",
+    name: "Publish to Instagram",
+    description: "Publish images and captions to connected Instagram Business account",
+  },
+  {
+    id: "analyze_image",
+    name: "Analyze Images",
+    description: "Analyze, describe, or extract text from uploaded images using Gemini Vision",
   },
 ];
 

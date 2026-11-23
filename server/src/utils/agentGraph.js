@@ -230,7 +230,24 @@ export const createAgentGraph = async (agent, userId) => {
 
   const finalTools = [];
 
-  if (webSearchMcpTool) {
+  const isToolEnabled = (toolName) => {
+    if (
+      !agent?.tools ||
+      !Array.isArray(agent.tools) ||
+      agent.tools.length === 0
+    ) {
+      return true;
+    }
+    return agent.tools.some((t) => {
+      const cleanA = String(t).toLowerCase().replace(/[._-]/g, "");
+      const cleanB = String(toolName).toLowerCase().replace(/[._-]/g, "");
+      return (
+        cleanA === cleanB || cleanB.includes(cleanA) || cleanA.includes(cleanB)
+      );
+    });
+  };
+
+  if (webSearchMcpTool && isToolEnabled("web_search")) {
     finalTools.push(
       new DynamicStructuredTool({
         name: "web_search",
@@ -251,7 +268,7 @@ export const createAgentGraph = async (agent, userId) => {
     );
   }
 
-  if (sendEmailMcpTool) {
+  if (sendEmailMcpTool && isToolEnabled("send_email")) {
     finalTools.push(
       new DynamicStructuredTool({
         name: "send_email",
@@ -295,7 +312,7 @@ export const createAgentGraph = async (agent, userId) => {
     );
   }
 
-  if (createEventMcpTool) {
+  if (createEventMcpTool && isToolEnabled("create_calendar_event")) {
     finalTools.push(
       new DynamicStructuredTool({
         name: "create_calendar_event",
@@ -365,7 +382,7 @@ export const createAgentGraph = async (agent, userId) => {
     );
   }
 
-  if (listEmailsMcpTool) {
+  if (listEmailsMcpTool && isToolEnabled("list_emails")) {
     finalTools.push(
       new DynamicStructuredTool({
         name: "list_emails",
@@ -414,7 +431,7 @@ Rules:
     );
   }
 
-  if (listCalenderEventsMcpTool) {
+  if (listCalenderEventsMcpTool && isToolEnabled("list_calendar_events")) {
     finalTools.push(
       new DynamicStructuredTool({
         name: "list_calendar_events",
@@ -456,7 +473,7 @@ Date and time rules:
     );
   }
 
-  if (publishOnInstagramMcpTool) {
+  if (publishOnInstagramMcpTool && isToolEnabled("publish_instagram_post")) {
     finalTools.push(
       new DynamicStructuredTool({
         name: "publish_instagram_post",
@@ -505,7 +522,7 @@ Date and time rules:
     );
   }
 
-  if (analyzeImageMcpTool) {
+  if (analyzeImageMcpTool && isToolEnabled("analyze_image")) {
     finalTools.push(
       new DynamicStructuredTool({
         name: "analyze_image",
