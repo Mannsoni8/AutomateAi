@@ -18,6 +18,14 @@ import {
   sanitizeMetaError,
 } from "../utils/instagramUtils.js";
 import axios from "axios";
+import { HumanMessage } from "@langchain/core/messages";
+import { ChatGoogle } from "@langchain/google";
+
+const GEMINI_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
+];
 
 const server = new McpServer({
   name: "automate-ai-mcp-server",
@@ -481,7 +489,8 @@ server.registerTool(
               type: "text",
               text: JSON.stringify({
                 success: false,
-                error: "Instagram is not connected or its access token is unavailable. Please connect your Instagram account first.",
+                error:
+                  "Instagram is not connected or its access token is unavailable. Please connect your Instagram account first.",
                 code: "INSTAGRAM_NOT_CONNECTED",
               }),
             },
@@ -584,7 +593,9 @@ server.registerTool(
           }
 
           if (statusCode === "ERROR" || statusCode === "EXPIRED") {
-            const detail = statusResponse.data?.status || "Container processing failed on Meta.";
+            const detail =
+              statusResponse.data?.status ||
+              "Container processing failed on Meta.";
             return {
               isError: true,
               content: [
@@ -600,7 +611,10 @@ server.registerTool(
             };
           }
         } catch (pollErr) {
-          console.warn(`Polling container ${creationId} attempt ${attempt + 1} error:`, pollErr.message);
+          console.warn(
+            `Polling container ${creationId} attempt ${attempt + 1} error:`,
+            pollErr.message,
+          );
         }
 
         await new Promise((r) => setTimeout(r, 2000));
@@ -614,7 +628,8 @@ server.registerTool(
               type: "text",
               text: JSON.stringify({
                 success: false,
-                error: "Instagram media processing timed out. Image was not ready within 30 seconds.",
+                error:
+                  "Instagram media processing timed out. Image was not ready within 30 seconds.",
                 code: "MEDIA_PROCESSING_TIMEOUT",
               }),
             },
@@ -660,7 +675,8 @@ server.registerTool(
               type: "text",
               text: JSON.stringify({
                 success: false,
-                error: "Instagram did not return a verified media ID after publication.",
+                error:
+                  "Instagram did not return a verified media ID after publication.",
                 code: "PUBLISH_VERIFICATION_FAILED",
               }),
             },
@@ -694,6 +710,196 @@ server.registerTool(
               success: false,
               error: `Instagram publishing failed: ${error.message || error}`,
               code: "UNEXPECTED_ERROR",
+            }),
+          },
+        ],
+      };
+    }
+  },
+);
+
+server.registerTool(
+  "analyze_image",
+  {
+    description: `
+Analyze an image using this tool.
+
+Use this tool whenever the user uploads or provides an image
+and asks a question about it, or simply wants to know what
+the image contains.
+
+Examples:
+- What is in this image?
+- Describe this image.
+- Explain this screenshot.
+- Read the text in this image.
+- Explain this code screenshot.
+
+IMPORTANT:
+- Analyze the image and answer the user's question.
+- If the user only uploads an image without a question,
+  describe the image and its important visible details.
+- Never suggest publishing the image to Instagram unless
+  the user explicitly asks to publish or post it.
+- This tool only analyzes images. It never publishes them.
+`,
+
+    inputSchema: z.object({
+      imageUrl: z
+        .string()
+        .url()
+        .refine((url) => url.startsWith("https://"), {
+          message: "Image URL must be a valid HTTPS URL",
+        }),
+      prompt: z
+        .string()
+        .trim()
+        .max(2200)
+        .default("Describe this image clearly and accurately."),
+    }),
+  },
+  async ({ imageUrl, prompt }) => {
+    try {
+      const imageResponse = await fetch(imageUrl, {
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!imageResponse.ok) {
+        throw new Error(`Image fetch failed: ${imageResponse.status}`);
+      }
+
+      const contentType = imageResponse.headers
+        .get("content-type")
+        ?.split(";")[0]
+        ?.trim()
+        ?.toLowerCase();
+
+      if (!["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
+        throw new Error("Unsupported image content type");
+      }
+
+      const maxBytes = 10 * 1024 * 1024;
+      const contentLength = imageResponse.headers.get("content-length");
+      if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+        throw new Error("Image exceeds 10 MB");
+      }
+
+      const chunks = [];
+      let totalBytes = 0;
+
+      if (!imageResponse.body) {
+        throw new Error("Empty image response");
+      }
+
+      for await (const chunk of imageResponse.body) {
+        totalBytes += chunk.length;
+
+        if (totalBytes > maxBytes) {
+          await imageResponse.body.cancel().catch(() => {});
+          throw new Error("Image exceeds 10 MB");
+        }
+
+        chunks.push(Buffer.from(chunk));
+      }
+
+      const base64image = Buffer.concat(chunks).toString("base64");
+
+      const analysisPrompt =
+        prompt && typeof prompt === "string" && prompt.trim()
+          ? prompt.trim()
+          : "Describe this image clearly and accurately.";
+
+      const message = new HumanMessage({
+        content: [
+          {
+            type: "text",
+            text: analysisPrompt,
+          },
+          {
+            type: "image_url",
+            image_url: `data:${contentType};base64,${base64image}`,
+          },
+        ],
+      });
+
+      let lastError;
+
+      for (const model of GEMINI_MODELS) {
+        try {
+          console.log(`Trying Gemini model: ${model}`);
+
+          const analyzer = new ChatGoogle({
+            model,
+            temperature: 0,
+            maxRetries: 0,
+            apiKey:
+              config.GOOGLE_API_KEY ||
+              process.env.GOOGLE_API_KEY ||
+              process.env.GEMINI_API_KEY,
+          });
+
+          const response = await analyzer.invoke([message]);
+
+          let analysisText = "";
+          if (typeof response.content === "string") {
+            analysisText = response.content.trim();
+          } else if (Array.isArray(response.content)) {
+            analysisText = response.content
+              .map((item) => (typeof item === "string" ? item : item?.text || ""))
+              .filter(Boolean)
+              .join("\n")
+              .trim();
+          }
+
+          if (!analysisText) {
+            throw new Error("Gemini returned an empty image analysis");
+          }
+
+          console.log(`Image analysis completed using ${model}`);
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: analysisText,
+              },
+            ],
+          };
+        } catch (error) {
+          lastError = error;
+
+          const status = Number(
+            error.status ?? error.statusCode ?? error.response?.status,
+          );
+
+          const temporary =
+            [429, 500, 502, 503, 504].includes(status) ||
+            /high demand|overloaded|temporarily unavailable|resource exhausted|rate limit/i.test(
+              error.message || "",
+            );
+
+          if (!temporary) {
+            throw error;
+          }
+
+          console.warn(
+            `Gemini ${model} temporarily unavailable. Trying fallback.`,
+          );
+        }
+      }
+
+      throw lastError || new Error("All Gemini models failed");
+    } catch (error) {
+      console.error("analyze_image unexpected error:", error);
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              error: `Image analysis failed: ${error.message || error}`,
+              code: "IMAGE_ANALYSIS_ERROR",
             }),
           },
         ],

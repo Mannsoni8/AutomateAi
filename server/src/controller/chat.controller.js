@@ -23,10 +23,10 @@ export const chatController = async (req, res) => {
           : `Attached image URL: ${imageUrl}`)
       : text;
 
-    // Route action requests (such as Instagram publishing, email, calendar) to the tool-enabled agent graph
+    // Route action requests (such as Instagram publishing, email, calendar, image analysis) to the tool-enabled agent graph
     const isActionRequest =
       Boolean(imageUrl) ||
-      /instagram|post|publish|calendar|email|schedule|mail|search/i.test(text);
+      /instagram|post|publish|calendar|email|schedule|mail|search|analyze|describe|image|photo|picture/i.test(text);
 
     let graphToInvoke = workFlow;
     let threadId = clientThreadId || req.user._id.toString();

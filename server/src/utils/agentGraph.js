@@ -11,14 +11,18 @@ import {
   Command,
 } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage,
+  ToolMessage,
+} from "@langchain/core/messages";
 import { getMcpTools } from "../mcp/langgrap-mcp.js";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
 import { invokeWithRateLimitRetry } from "./retry.js";
 import { sanitizeMessages } from "./sanitizeMessages.js";
-import { isExplicitConfirmation } from "./instagramUtils.js";
 import { ChatGoogle } from "@langchain/google";
 
 const llm = new ChatGroq({
@@ -70,9 +74,7 @@ const generateCaption = async (imageUrl) => {
     });
 
     if (!imageResponse.ok) {
-      throw new Error(
-        `Image fetch failed: ${imageResponse.status}`
-      );
+      throw new Error(`Image fetch failed: ${imageResponse.status}`);
     }
 
     const contentType = imageResponse.headers
@@ -97,7 +99,7 @@ const generateCaption = async (imageUrl) => {
       totalBytes += chunk.length;
 
       if (totalBytes > maxBytes) {
-        await imageResponse.body.cancel().catch(() => { });
+        await imageResponse.body.cancel().catch(() => {});
         throw new Error("Image exceeds 10 MB");
       }
 
@@ -134,9 +136,7 @@ const generateCaption = async (imageUrl) => {
         const response = await analyzer.invoke([message]);
 
         const caption =
-          typeof response.content === "string"
-            ? response.content.trim()
-            : "";
+          typeof response.content === "string" ? response.content.trim() : "";
 
         if (!caption) {
           throw new Error("Gemini returned an empty caption");
@@ -149,15 +149,13 @@ const generateCaption = async (imageUrl) => {
         lastError = error;
 
         const status = Number(
-          error.status ??
-          error.statusCode ??
-          error.response?.status
+          error.status ?? error.statusCode ?? error.response?.status,
         );
 
         const temporary =
           [429, 500, 502, 503, 504].includes(status) ||
           /high demand|overloaded|temporarily unavailable|resource exhausted|rate limit/i.test(
-            error.message || ""
+            error.message || "",
           );
 
         if (!temporary) {
@@ -165,7 +163,7 @@ const generateCaption = async (imageUrl) => {
         }
 
         console.warn(
-          `Gemini ${model} temporarily unavailable. Trying fallback.`
+          `Gemini ${model} temporarily unavailable. Trying fallback.`,
         );
       }
     }
@@ -222,6 +220,11 @@ export const createAgentGraph = async (agent, userId) => {
   const publishOnInstagramMcpTool = findTool(mcpTools, [
     "publish_instagram_post",
     "autoMate_publish_instagram_post",
+  ]);
+
+  const analyzeImageMcpTool = findTool(mcpTools, [
+    "analyze_image",
+    "autoMate_analyze_image",
   ]);
 
   const finalTools = [];
@@ -501,6 +504,56 @@ Date and time rules:
     );
   }
 
+  if (analyzeImageMcpTool) {
+    finalTools.push(
+      new DynamicStructuredTool({
+        name: "analyze_image",
+        description: `
+Analyze an image using this tool.
+
+Use this tool whenever the user uploads or provides an image and asks a question about it, or simply wants to know what the image contains.
+
+Examples:
+- What is in this image?
+- Describe this image.
+- Explain this screenshot.
+- Read the text in this image.
+- Explain this code screenshot.
+
+IMPORTANT:
+- Analyze the image and answer the user's question.
+- If the user only uploads an image without a question, describe the image and its important visible details.
+- Never suggest publishing the image to Instagram unless the user explicitly asks to publish or post it.
+- This tool only analyzes images. It never publishes them.
+`,
+        schema: z.object({
+          imageUrl: z
+            .string()
+            .url()
+            .describe("Publicly accessible HTTPS image URL to analyze"),
+          prompt: z
+            .string()
+            .trim()
+            .max(2200)
+            .default("Describe this image clearly and accurately.")
+            .describe("The question or instruction about the image"),
+        }),
+        func: async ({ imageUrl, prompt }) => {
+          try {
+            const result = await analyzeImageMcpTool.invoke({
+              imageUrl,
+              prompt: prompt || "Describe this image clearly and accurately.",
+            });
+            return result;
+          } catch (error) {
+            console.error("❌ MCP analyze_image Error: ", error);
+            return "Image analysis failed";
+          }
+        },
+      }),
+    );
+  }
+
   const llmWithTools = finalTools.length > 0 ? llm.bindTools(finalTools) : llm;
 
   const currentDateTime = new Intl.DateTimeFormat("en-IN", {
@@ -522,6 +575,7 @@ Context & Rules:
   * Your responsibility is to call the tool directly.
 - When a user message includes an "Attached image URL: https://..." line, treat it as the public image attached to that turn.
 - If the user asks to publish that image on Instagram, call publish_instagram_post with the exact attached URL as imageUrl immediately.
+- If the user asks a question about that image, asks to describe, explain, or read it, or simply uploads it without asking to publish, call analyze_image with the exact attached URL as imageUrl and the user's question as prompt.
 - Never ask for passwords, API keys, tokens, or user IDs.
 - Never fabricate search results or tool confirmations.
 - Be concise, accurate, and helpful.
@@ -555,9 +609,8 @@ Context & Rules:
 
     // Find approval-protected tool calls
     const protectedToolCalls =
-      lastMessage?.tool_calls?.filter((call) =>
-        approvalTools.has(call.name),
-      ) || [];
+      lastMessage?.tool_calls?.filter((call) => approvalTools.has(call.name)) ||
+      [];
 
     if (protectedToolCalls.length === 0) {
       return state;
@@ -571,7 +624,8 @@ Context & Rules:
               tool_call_id: call.id,
               content: JSON.stringify({
                 success: false,
-                message: "Please request one approval-protected action at a time.",
+                message:
+                  "Please request one approval-protected action at a time.",
               }),
             }),
         ),
@@ -598,7 +652,8 @@ Context & Rules:
               tool_call_id: actionCall.id,
               content: JSON.stringify({
                 success: false,
-                message: "Please provide a valid recipient email, subject, and body.",
+                message:
+                  "Please provide a valid recipient email, subject, and body.",
               }),
             }),
           ],
@@ -621,7 +676,8 @@ Context & Rules:
               content: JSON.stringify({
                 success: false,
                 rejected: true,
-                message: decision?.reason || "Sending email was cancelled by user.",
+                message:
+                  decision?.reason || "Sending email was cancelled by user.",
               }),
             }),
           ],
@@ -647,7 +703,8 @@ Context & Rules:
               tool_call_id: actionCall.id,
               content: JSON.stringify({
                 success: false,
-                message: "Please provide valid event summary, start time, and end time.",
+                message:
+                  "Please provide valid event summary, start time, and end time.",
               }),
             }),
           ],
@@ -676,7 +733,9 @@ Context & Rules:
               content: JSON.stringify({
                 success: false,
                 rejected: true,
-                message: decision?.reason || "Calendar event creation was cancelled by user.",
+                message:
+                  decision?.reason ||
+                  "Calendar event creation was cancelled by user.",
               }),
             }),
           ],
@@ -696,7 +755,8 @@ Context & Rules:
               tool_call_id: actionCall.id,
               content: JSON.stringify({
                 success: false,
-                message: "Invalid Instagram post details. A valid HTTPS image URL is required.",
+                message:
+                  "Invalid Instagram post details. A valid HTTPS image URL is required.",
               }),
             }),
           ],
@@ -732,7 +792,9 @@ Context & Rules:
               content: JSON.stringify({
                 success: false,
                 rejected: true,
-                message: decision?.reason || "Instagram post publication was cancelled by user.",
+                message:
+                  decision?.reason ||
+                  "Instagram post publication was cancelled by user.",
               }),
             }),
           ],
@@ -764,7 +826,7 @@ Context & Rules:
     const lastMessage = messages[messages.length - 1];
 
     if (lastMessage instanceof ToolMessage) {
-      return "chatNode"
+      return "chatNode";
     }
 
     if (!lastMessage?.tool_calls || lastMessage.tool_calls.length === 0) {
