@@ -18,6 +18,7 @@ import {
   UserRound,
   Workflow,
   X,
+  Zap,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useDispatch, useSelector } from "react-redux";
 import { useState, useRef, useEffect } from "react";
-import { logout } from "@/features/auth";
+import { logout, me } from "@/features/auth";
 import { setUserData } from "@/redux/userSlice";
 import { setSelectedAgent } from "@/redux/agentSlice";
 import { Textarea } from "@/components/ui/textarea";
@@ -248,6 +249,12 @@ const HomePage = () => {
             content: text,
           },
         ]);
+        // Refresh credit balance
+        me()
+          .then((fresh) => {
+            if (fresh) dispatch(setUserData(fresh));
+          })
+          .catch(() => {});
       }
 
       clearSelectedImage();
@@ -324,6 +331,12 @@ const HomePage = () => {
               content: text,
             },
           ]);
+          // Refresh credit balance
+          me()
+            .then((fresh) => {
+              if (fresh) dispatch(setUserData(fresh));
+            })
+            .catch(() => {});
         }
       }
     } catch (error) {
@@ -381,6 +394,18 @@ const HomePage = () => {
             </span>
           </Link>
           <div className="flex items-center gap-2.5">
+            <Link
+              to="/pricing"
+              className="flex items-center gap-1.5 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-300 transition hover:border-violet-500/50 hover:bg-violet-500/20 hover:text-white"
+              title="Current credits balance (Click to buy more)">
+              <Zap size={14} className="text-violet-400" />
+              <span className="font-semibold text-white">
+                {typeof userData?.credits === "number"
+                  ? userData.credits.toLocaleString()
+                  : 0}
+              </span>
+            </Link>
+
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button variant="outline" className={iconBtn} />}>
@@ -466,6 +491,16 @@ const HomePage = () => {
                       {userData?.email || "email@example.com"}
                     </p>
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-white/5 px-3 py-2 text-xs">
+                  <span className="text-zinc-400">Available Credits</span>
+                  <Link
+                    to="/pricing"
+                    className="flex items-center gap-1 font-semibold text-violet-300 hover:text-white hover:underline">
+                    <Zap size={13} />
+                    {userData?.credits ?? 0}
+                  </Link>
                 </div>
 
                 <DropdownMenuSeparator className={menuSeparator} />
