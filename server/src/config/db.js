@@ -1,12 +1,34 @@
 import mongoose from "mongoose";
+import dns from "node:dns";
 import { config } from "./env.js";
 
-export const connectDB = async () => {
-  try {
-    await mongoose.connect(config.MONGO_URI);
-    console.log("Data base is connected");
-  } catch (error) {
-    console.error("❌ MongoDB connection error:", error.message);
+// Use public DNS resolvers to prevent ECONNREFUSED on MongoDB SRV record lookups
+try {
+  dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
+} catch (dnsErr) {
+  console.warn("Could not set custom DNS servers:", dnsErr.message);
+}
+
+export const connectDB = async (retries = 5, delayMs = 3000) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await mongoose.connect(config.MONGO_URI, {
+        serverSelectionTimeoutMS: 10000,
+      });
+      console.log("Data base is connected");
+      return;
+    } catch (error) {
+      console.error(
+        `❌ MongoDB connection attempt ${attempt}/${retries} failed:`,
+        error.message,
+      );
+      if (attempt < retries) {
+        console.log(`Retrying MongoDB connection in ${delayMs / 1000}s...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      } else {
+        console.error("❌ All MongoDB connection attempts failed.");
+      }
+    }
   }
 };
 
