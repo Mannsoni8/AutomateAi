@@ -80,11 +80,25 @@ const getGoogleOauthClient = async (userId, requiredService) => {
   return oAuthClient;
 };
 
-const tavilySearch = new TavilySearch({
-  maxResults: 3,
-  topic: "general",
-  tavilyApiKey: config.TAVILY_API_KEY,
-});
+let tavilySearch = null;
+const getTavilySearch = () => {
+  if (!config.TAVILY_API_KEY) {
+    return null;
+  }
+  if (!tavilySearch) {
+    try {
+      tavilySearch = new TavilySearch({
+        maxResults: 3,
+        topic: "general",
+        tavilyApiKey: config.TAVILY_API_KEY,
+      });
+    } catch (err) {
+      console.warn("Tavily initialization failed:", err.message);
+      return null;
+    }
+  }
+  return tavilySearch;
+};
 
 server.registerTool(
   "web_search",
@@ -96,7 +110,18 @@ server.registerTool(
   },
   async ({ query }) => {
     try {
-      const result = await tavilySearch.invoke({ query });
+      const searcher = getTavilySearch();
+      if (!searcher) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Web search is currently unavailable: TAVILY_API_KEY is not configured.",
+            },
+          ],
+        };
+      }
+      const result = await searcher.invoke({ query });
       return {
         content: [
           {
