@@ -52,7 +52,6 @@ export const ChatSidebar = ({
   chats = [],
   activeChatId,
   onSelectChat,
-  onNewChat,
   onDeleteChat,
   userData,
 }) => {
