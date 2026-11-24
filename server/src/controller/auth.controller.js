@@ -31,26 +31,32 @@ export const loginController = async (req, res) => {
       return res.status(401).json({ message: "Invalid or expired Firebase token" });
     }
 
-    const user = await userModel.findOneAndUpdate(
-      {
+    const normalizedEmail = (decoded.email || "").toLowerCase().trim();
+
+    // Find existing user by firebaseUid OR by email to prevent duplicate key errors
+    let user = await userModel.findOne({
+      $or: [
+        { firebaseUid: decoded.uid },
+        ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
+      ],
+    });
+
+    if (user) {
+      // Update existing record, syncing firebaseUid and latest profile info
+      user.firebaseUid = decoded.uid;
+      user.name = decoded.name || decoded.displayName || user.name || "User";
+      if (normalizedEmail) user.email = normalizedEmail;
+      if (decoded.picture) user.profilePicture = decoded.picture;
+      await user.save();
+    } else {
+      // Create new user record
+      user = await userModel.create({
         firebaseUid: decoded.uid,
-      },
-      {
-        $set: {
-          name: decoded.name || decoded.displayName || "User",
-          email: decoded.email,
-          profilePicture: decoded.picture || "",
-        },
-        $setOnInsert: {
-          firebaseUid: decoded.uid,
-        },
-      },
-      {
-        upsert: true,
-        new: true,
-        setDefaultsOnInsert: true,
-      },
-    );
+        name: decoded.name || decoded.displayName || "User",
+        email: normalizedEmail,
+        profilePicture: decoded.picture || "",
+      });
+    }
 
     if (!user) {
       console.error("User could not be created or updated");
