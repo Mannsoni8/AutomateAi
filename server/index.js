@@ -11,11 +11,29 @@ import paymentRouter from "./src/routers/payment.route.js";
 
 const app = express();
 
+app.set("trust proxy", 1);
 app.use(express.json());
 app.use(cookieParser());
+
+const allowedOrigins = (config.FRONTED_URL || "")
+  .split(",")
+  .map((url) => url.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: config.FRONTED_URL,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const cleanOrigin = origin.replace(/\/+$/, "");
+      if (
+        allowedOrigins.length === 0 ||
+        allowedOrigins.includes(cleanOrigin) ||
+        process.env.NODE_ENV !== "production"
+      ) {
+        return callback(null, cleanOrigin);
+      }
+      return callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     credentials: true,
   }),
 );

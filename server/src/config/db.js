@@ -10,6 +10,10 @@ try {
 }
 
 export const connectDB = async (retries = 5, delayMs = 3000) => {
+  if (!config.MONGO_URI) {
+    console.error("❌ FATAL: MONGO_URI is missing in environment variables!");
+    return;
+  }
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       await mongoose.connect(config.MONGO_URI, {

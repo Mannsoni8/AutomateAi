@@ -6,10 +6,13 @@ import { config } from "../config/env.js";
 
 const COOKIE_NAME = "token";
 
+const isProduction =
+  process.env.NODE_ENV === "production" || process.env.RENDER === "true";
+
 const getCookieOptions = () => ({
   httpOnly: true,
-  secure: true,
-  sameSite: none,
+  secure: isProduction,
+  sameSite: isProduction ? "none" : "lax",
   path: "/",
 });
 
@@ -71,6 +74,7 @@ export const loginController = async (req, res) => {
     return res.status(200).json({
       message: "User login successfully",
       user,
+      token,
     });
   } catch (error) {
     console.error("Login controller error:", error);

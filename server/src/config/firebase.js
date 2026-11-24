@@ -5,17 +5,27 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const keyPath = path.resolve(__dirname, "../../serviceAccountKey.json");
+const candidatePaths = [
+  path.resolve(__dirname, "../../serviceAccountKey.json"),
+  path.resolve(process.cwd(), "serviceAccountKey.json"),
+  path.resolve(process.cwd(), "server/serviceAccountKey.json"),
+  "/etc/secrets/serviceAccountKey.json",
+];
 
 let serviceAccount = null;
 
-if (fs.existsSync(keyPath)) {
-  try {
-    serviceAccount = JSON.parse(fs.readFileSync(keyPath, "utf-8"));
-  } catch (err) {
-    console.error("Error reading serviceAccountKey.json:", err.message);
+for (const candidate of candidatePaths) {
+  if (fs.existsSync(candidate)) {
+    try {
+      serviceAccount = JSON.parse(fs.readFileSync(candidate, "utf-8"));
+      break;
+    } catch (err) {
+      console.error(`Error reading ${candidate}:`, err.message);
+    }
   }
-} else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+}
+
+if (!serviceAccount && process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
     serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
   } catch {
@@ -27,6 +37,12 @@ if (fs.existsSync(keyPath)) {
       console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT env var:", parseErr.message);
     }
   }
+}
+
+if (!serviceAccount) {
+  console.warn(
+    "⚠️ No Firebase service account credentials found! Set FIREBASE_SERVICE_ACCOUNT in Render Environment or upload serviceAccountKey.json.",
+  );
 }
 
 export const app =
