@@ -520,14 +520,14 @@ const HomePage = () => {
               <PanelLeft size={18} />
             </Button>
 
-            <Button
+            {/* <Button
               variant="ghost"
               size="icon"
               onClick={handleNewChat}
               className="flex size-9 rounded-xl border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/10 hover:text-white"
               title="New chat (Ctrl+K)">
               <SquarePen size={17} />
-            </Button>
+            </Button> */}
 
             <Link
               to="/"
