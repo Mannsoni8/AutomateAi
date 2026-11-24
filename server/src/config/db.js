@@ -19,7 +19,7 @@ export const connectDB = async (retries = 5, delayMs = 3000) => {
       await mongoose.connect(config.MONGO_URI, {
         serverSelectionTimeoutMS: 10000,
       });
-      console.log("Data base is connected");
+      console.info("Data base is connected");
       return;
     } catch (error) {
       console.error(
@@ -27,7 +27,7 @@ export const connectDB = async (retries = 5, delayMs = 3000) => {
         error.message,
       );
       if (attempt < retries) {
-        console.log(`Retrying MongoDB connection in ${delayMs / 1000}s...`);
+        console.info(`Retrying MongoDB connection in ${delayMs / 1000}s...`);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       } else {
         console.error("❌ All MongoDB connection attempts failed.");

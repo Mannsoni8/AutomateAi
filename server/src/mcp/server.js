@@ -1,3 +1,7 @@
+// Ensure stdio stdout is strictly reserved for MCP JSON-RPC protocol
+console.log = (...args) => console.error(...args);
+console.info = (...args) => console.error(...args);
+
 import { McpServer } from "@modelcontextprotocol/server";
 import {
   serveStdio,
