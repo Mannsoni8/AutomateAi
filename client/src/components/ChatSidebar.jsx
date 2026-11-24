@@ -110,17 +110,6 @@ export const ChatSidebar = ({
 
         {/* New Chat Button & Search */}
         <div className="flex flex-col gap-2 p-3">
-          <Button
-            onClick={() => {
-              onNewChat();
-              if (window.innerWidth < 768) onClose();
-            }}
-            className="flex h-10 w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.05] px-3.5 text-xs font-medium text-white transition hover:border-violet-500/40 hover:bg-white/[0.08] hover:text-white">
-            <kbd className="hidden rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-400 sm:inline-block">
-              Ctrl+K
-            </kbd>
-          </Button>
-
           {chats.length > 5 && (
             <div className="relative">
               <Search
