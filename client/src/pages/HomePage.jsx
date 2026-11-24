@@ -9,6 +9,7 @@ import {
   Loader2,
   LogOut,
   Mail,
+  PanelLeft,
   Plus,
   Settings2,
   SquarePen,
@@ -34,6 +35,26 @@ import { setUserData } from "@/redux/userSlice";
 import { setSelectedAgent } from "@/redux/agentSlice";
 import { Textarea } from "@/components/ui/textarea";
 import { agentChat, chat, resumeChat } from "@/features/chat";
+import { ChatSidebar } from "@/components/ChatSidebar";
+
+const getStoredChats = (userId) => {
+  try {
+    const key = `automate_ai_chats_${userId || "guest"}`;
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveStoredChats = (userId, chatsList) => {
+  try {
+    const key = `automate_ai_chats_${userId || "guest"}`;
+    localStorage.setItem(key, JSON.stringify(chatsList));
+  } catch (err) {
+    console.warn("Could not save chats to localStorage:", err);
+  }
+};
 
 const hideScrollbar =
   "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
@@ -66,6 +87,14 @@ const HomePage = () => {
     Date.now().toString(),
   );
 
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth >= 768;
+    }
+    return true;
+  });
+  const [chats, setChats] = useState([]);
+
   const { userData } = useSelector((state) => state.user || {});
   const { agents = [], selectedAgent } = useSelector(
     (state) => state.agent || {},
@@ -75,6 +104,61 @@ const HomePage = () => {
   const messagesEndRef = useRef(null);
 
   const fileinputRef = useRef(null);
+
+  useEffect(() => {
+    const loaded = getStoredChats(userData?._id);
+    setChats(loaded);
+  }, [userData?._id]);
+
+  useEffect(() => {
+    if (!messages || messages.length === 0) return;
+
+    setChats((prevChats) => {
+      const existingIndex = prevChats.findIndex((c) => c.id === chatSessionId);
+      const firstUserMsg =
+        messages.find((m) => m.role === "user")?.content ||
+        (selectedAgent ? "Agent Task" : "New Chat");
+      const title =
+        firstUserMsg.length > 36
+          ? firstUserMsg.slice(0, 36).trim() + "..."
+          : firstUserMsg;
+
+      let updated;
+      if (existingIndex >= 0) {
+        updated = [...prevChats];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          messages,
+          title: prevChats[existingIndex].title || title,
+          updatedAt: Date.now(),
+        };
+      } else {
+        const newChat = {
+          id: chatSessionId,
+          title,
+          agentId: selectedAgent || null,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          messages,
+        };
+        updated = [newChat, ...prevChats];
+      }
+
+      saveStoredChats(userData?._id, updated);
+      return updated;
+    });
+  }, [messages, chatSessionId, selectedAgent, userData?._id]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        handleNewChat();
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -355,6 +439,29 @@ const HomePage = () => {
     }
   };
 
+  const handleSelectChat = (chatId) => {
+    const target = chats.find((c) => c.id === chatId);
+    if (!target) return;
+    setChatSessionId(target.id);
+    setMessages(target.messages || []);
+    if (target.agentId) {
+      dispatch(setSelectedAgent(target.agentId));
+    }
+    clearSelectedImage();
+    setInput("");
+    setApprovingIndex(null);
+    setRejectingIndex(null);
+  };
+
+  const handleDeleteChat = (chatId) => {
+    const updated = chats.filter((c) => c.id !== chatId);
+    setChats(updated);
+    saveStoredChats(userData?._id, updated);
+    if (chatSessionId === chatId) {
+      handleNewChat();
+    }
+  };
+
   const handleNewChat = () => {
     setMessages([]);
     setInput("");
@@ -372,25 +479,68 @@ const HomePage = () => {
   };
 
   return (
-    <div className="relative flex h-dvh flex-col overflow-hidden bg-[radial-gradient(ellipse_80%_60%_at_50%_0%,#2b2f3a_0%,#191b21_55%,#121317_100%)] text-white">
+    <div className="relative flex h-dvh w-full overflow-hidden bg-[radial-gradient(ellipse_80%_60%_at_50%_0%,#2b2f3a_0%,#191b21_55%,#121317_100%)] text-white">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(0,0,0,0.35)_100%)]"
       />
 
+      {/* ChatGPT-style Left Sidebar */}
+      <ChatSidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        chats={chats}
+        activeChatId={chatSessionId}
+        onSelectChat={handleSelectChat}
+        onNewChat={handleNewChat}
+        onDeleteChat={handleDeleteChat}
+        userData={userData}
+      />
+
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <header className="z-30 flex h-16 shrink-0 items-center justify-between border-b border-white/[0.06] bg-[#121317]/50 px-4 backdrop-blur-xl sm:px-6">
-          <Link
-            to="/"
-            className="flex items-center gap-2.5 transition hover:opacity-90">
-            <span className="grid size-8 place-items-center rounded-lg bg-white text-zinc-900 shadow-[0_4px_16px_rgba(255,255,255,0.12)]">
-              <Workflow size={17} />
-            </span>
+          <div className="flex items-center gap-2.5">
+            {!sidebarOpen && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(true)}
+                className="hidden size-9 rounded-xl border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/10 hover:text-white md:flex"
+                title="Open sidebar">
+                <PanelLeft size={18} />
+              </Button>
+            )}
 
-            <span className="text-sm font-medium tracking-tight">
-              Automate AI
-            </span>
-          </Link>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(true)}
+              className="flex size-9 rounded-xl border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/10 hover:text-white md:hidden"
+              title="Open sidebar">
+              <PanelLeft size={18} />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleNewChat}
+              className="flex size-9 rounded-xl border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/10 hover:text-white"
+              title="New chat (Ctrl+K)">
+              <SquarePen size={17} />
+            </Button>
+
+            <Link
+              to="/"
+              className="flex items-center gap-2.5 pl-1 transition hover:opacity-90">
+              <span className="grid size-8 place-items-center rounded-lg bg-white text-zinc-900 shadow-[0_4px_16px_rgba(255,255,255,0.12)]">
+                <Workflow size={17} />
+              </span>
+
+              <span className="hidden text-sm font-semibold tracking-tight text-white sm:inline">
+                Automate AI
+              </span>
+            </Link>
+          </div>
           <div className="flex items-center gap-2.5">
             <Link
               to="/pricing"
