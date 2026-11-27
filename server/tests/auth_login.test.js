@@ -1,7 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import userModel from "../src/model/user.model.js";
-import { loginController } from "../src/controller/auth.controller.js";
+import {
+  loginController,
+  signinController,
+  signupController,
+} from "../src/controller/auth.controller.js";
 import { getAuth } from "firebase-admin/auth";
 
 const createMockRes = () => {
@@ -170,5 +174,84 @@ describe("Authentication & Account Linking Tests", () => {
     await loginController(req, res);
     assert.equal(res.statusCode, 400);
     assert.equal(res.body.message, "Firebase token is required");
+  });
+
+  it("registers and signs in a local email/password user via signupController & signinController", async () => {
+    const memoryStore = new Map();
+    const originalFindOne = userModel.findOne;
+    const originalCreate = userModel.create;
+
+    try {
+      userModel.findOne = (query) => {
+        const match = Array.from(memoryStore.values()).find(
+          (u) => u.email === query.email,
+        );
+        const result = match || null;
+        return {
+          select: async () => result,
+          then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
+        };
+      };
+
+      userModel.create = async (doc) => {
+        const created = {
+          _id: "usr_local_1",
+          credits: 100,
+          ...doc,
+        };
+        memoryStore.set(created.email, created);
+        return created;
+      };
+
+      // 1. Sign up
+      const signupReq = {
+        body: {
+          name: "Test User",
+          email: "testuser@example.com",
+          password: "password123",
+        },
+      };
+      const signupRes = createMockRes();
+      await signupController(signupReq, signupRes);
+
+      assert.equal(signupRes.statusCode, 201);
+      assert.equal(signupRes.body.user.email, "testuser@example.com");
+      assert.equal(signupRes.body.user.passwordHash, undefined, "passwordHash must not be leaked");
+      assert.ok(signupRes.body.token);
+
+      // 2. Duplicate signup returns 409
+      const dupRes = createMockRes();
+      await signupController(signupReq, dupRes);
+      assert.equal(dupRes.statusCode, 409);
+
+      // 3. Sign in with valid password
+      const signinReq = {
+        body: {
+          email: "testuser@example.com",
+          password: "password123",
+        },
+      };
+      const signinRes = createMockRes();
+      await signinController(signinReq, signinRes);
+
+      assert.equal(signinRes.statusCode, 200);
+      assert.equal(signinRes.body.user.email, "testuser@example.com");
+      assert.equal(signinRes.body.user.passwordHash, undefined);
+      assert.ok(signinRes.body.token);
+
+      // 4. Sign in with wrong password
+      const badReq = {
+        body: {
+          email: "testuser@example.com",
+          password: "wrongpassword",
+        },
+      };
+      const badRes = createMockRes();
+      await signinController(badReq, badRes);
+      assert.equal(badRes.statusCode, 401);
+    } finally {
+      userModel.findOne = originalFindOne;
+      userModel.create = originalCreate;
+    }
   });
 });

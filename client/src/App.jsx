@@ -62,7 +62,33 @@ const App = () => {
       <Routes>
         <Route
           path="/login"
-          element={userData ? <Navigate to="/" replace /> : <LoginPage />}
+          element={
+            userData ? (
+              <Navigate to="/" replace />
+            ) : (
+              <LoginPage initialMode="signin" />
+            )
+          }
+        />
+        <Route
+          path="/signin"
+          element={
+            userData ? (
+              <Navigate to="/" replace />
+            ) : (
+              <LoginPage initialMode="signin" />
+            )
+          }
+        />
+        <Route
+          path="/signup"
+          element={
+            userData ? (
+              <Navigate to="/" replace />
+            ) : (
+              <LoginPage initialMode="signup" />
+            )
+          }
         />
         <Route
           path="/"

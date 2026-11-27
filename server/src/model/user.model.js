@@ -3,7 +3,7 @@ const userShema = new mongoose.Schema(
   {
     firebaseUid: {
       type: String,
-      required: true,
+      sparse: true,
       unique: true,
     },
     name: {
@@ -17,6 +17,16 @@ const userShema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
+    },
+    passwordHash: {
+      type: String,
+      select: false,
+      default: null,
+    },
+    authProvider: {
+      type: String,
+      enum: ["local", "firebase", "google"],
+      default: "firebase",
     },
     profilePicture: {
       type: String,

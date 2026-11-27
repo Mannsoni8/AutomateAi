@@ -1,5 +1,38 @@
 import { api } from "../../api.js";
 
+export const signup = async ({ name, email, password }) => {
+  try {
+    const { data } = await api.post("/api/auth/signup", {
+      name,
+      email,
+      password,
+    });
+    if (data?.token) {
+      localStorage.setItem("token", data.token);
+    }
+    return data;
+  } catch (error) {
+    console.error("Error in signup API:", error.response?.data || error.message);
+    throw error;
+  }
+};
+
+export const signin = async ({ email, password }) => {
+  try {
+    const { data } = await api.post("/api/auth/signin", {
+      email,
+      password,
+    });
+    if (data?.token) {
+      localStorage.setItem("token", data.token);
+    }
+    return data;
+  } catch (error) {
+    console.error("Error in signin API:", error.response?.data || error.message);
+    throw error;
+  }
+};
+
 export const login = async (token) => {
   try {
     const { data } = await api.post("/api/auth/login", { token });
