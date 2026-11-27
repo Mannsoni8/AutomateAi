@@ -1,25 +1,49 @@
 import agentModel from "../model/agent.model.js";
 
+const ALLOWED_AGENT_TOOLS = new Set([
+  "web_search",
+  "send_email",
+  "list_emails",
+  "create_calendar_event",
+  "list_calendar_events",
+  "publish_instagram_post",
+  "analyze_image",
+]);
+
 export const createAgentController = async (req, res) => {
   try {
-    const { name, knowledgeBase, instructions, tools } = req.body;
+    const { name, knowledgeBase, instructions, tools } = req.body || {};
 
-    if (!name || !knowledgeBase || !instructions || !tools) {
+    if (
+      typeof name !== "string" ||
+      typeof knowledgeBase !== "string" ||
+      typeof instructions !== "string" ||
+      !name.trim() ||
+      !knowledgeBase.trim() ||
+      !instructions.trim() ||
+      !Array.isArray(tools)
+    ) {
       return res.status(400).json({ message: "All fields are required" });
     }
-    const existingAgentName = await agentModel.findOne({ name });
+
+    const trimmedName = name.trim();
+    const safeTools = tools.filter(
+      (t) => typeof t === "string" && ALLOWED_AGENT_TOOLS.has(t.trim()),
+    );
+
+    const existingAgentName = await agentModel.findOne({ name: trimmedName });
     if (existingAgentName) {
       return res
         .status(400)
         .json({ message: "Agent's name should be unique " });
     }
 
-    const userId = req.user?._id; // Assuming you have user authentication middleware that sets req.user
+    const userId = req.user?._id;
     const agent = await agentModel.create({
-      name,
-      knowledgeBase,
-      instructions,
-      tools,
+      name: trimmedName,
+      knowledgeBase: knowledgeBase.trim().slice(0, 10000),
+      instructions: instructions.trim().slice(0, 4000),
+      tools: safeTools,
       userId,
     });
     return res.status(201).json(agent);
@@ -47,8 +71,12 @@ export const getAgentByIdController = async (req, res) => {
     const agentId = req.params.id;
     const userId = req.user?._id;
 
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     const agent = await agentModel
-      .findById(agentId)
+      .findOne({ _id: agentId, userId })
       .populate("userId", "name email profilePicture");
 
     if (!agent) {
@@ -57,6 +85,9 @@ export const getAgentByIdController = async (req, res) => {
 
     return res.status(200).json(agent);
   } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({ message: "Invalid agent ID" });
+    }
     res.status(500).json({ message: error.message });
   }
 };
@@ -77,6 +108,9 @@ export const deleteAgentController = async (req, res) => {
 
     return res.status(200).json(agent);
   } catch (error) {
+    if (error.name === "CastError") {
+      return res.status(400).json({ message: "Invalid agent ID" });
+    }
     res.status(500).json({ message: error.message });
   }
 };

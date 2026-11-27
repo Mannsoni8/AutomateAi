@@ -152,6 +152,7 @@ describe("Razorpay Payment Controller Tests", () => {
 
     it("successfully validates authentic signature, marks paid, and increments credits", async () => {
       const originalFindOne = paymentModel.findOne;
+      const originalFindOneAndUpdate = paymentModel.findOneAndUpdate;
       const originalFindByIdAndUpdate = userModel.findByIdAndUpdate;
       const originalSecret = config.RAZORPAY_KEY_SECRET;
 
@@ -165,18 +166,25 @@ describe("Razorpay Payment Controller Tests", () => {
           .update(`${orderId}|${paymentId}`)
           .digest("hex");
 
-        let savedPayment = false;
         const mockPayment = {
           status: "created",
           credits: 500,
           razorpayPaymentId: null,
-          async save() {
-            savedPayment = true;
-          },
         };
 
         paymentModel.findOne = async (query) => {
           assert.equal(query.razorpayOrderId, orderId);
+          return mockPayment;
+        };
+
+        let atomicUpdated = false;
+        paymentModel.findOneAndUpdate = async (filter, update) => {
+          assert.equal(filter.razorpayOrderId, orderId);
+          assert.equal(filter.status, "created");
+          if (mockPayment.status !== "created") return null;
+          mockPayment.status = update.$set.status;
+          mockPayment.razorpayPaymentId = update.$set.razorpayPaymentId;
+          atomicUpdated = true;
           return mockPayment;
         };
 
@@ -207,10 +215,11 @@ describe("Razorpay Payment Controller Tests", () => {
 
         assert.equal(mockPayment.status, "paid");
         assert.equal(mockPayment.razorpayPaymentId, paymentId);
-        assert.equal(savedPayment, true, "Payment record must be saved with paid status");
+        assert.equal(atomicUpdated, true, "Payment record must be atomically updated with paid status");
         assert.equal(creditIncremented, true, "User credits must be incremented in DB");
       } finally {
         paymentModel.findOne = originalFindOne;
+        paymentModel.findOneAndUpdate = originalFindOneAndUpdate;
         userModel.findByIdAndUpdate = originalFindByIdAndUpdate;
         config.RAZORPAY_KEY_SECRET = originalSecret;
       }

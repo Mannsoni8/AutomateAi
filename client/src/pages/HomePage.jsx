@@ -176,18 +176,34 @@ const HomePage = () => {
     }
   };
 
+  const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+  const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+  const isSafeHttpsUrl = (url) =>
+    typeof url === "string" && /^https:\/\//i.test(url);
+
   const handerSelectImage = (e) => {
     const file = e.target.files?.[0];
     if (!file) {
       return;
     }
 
-    if (!file.type.startsWith("image/")) {
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Please select a valid image.",
+          content: "Please select a valid JPEG, PNG, or WebP image.",
+        },
+      ]);
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_BYTES) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Image size must be 5 MB or less.",
         },
       ]);
       return;
@@ -896,7 +912,7 @@ const HomePage = () => {
                           </div>
                         ) : (
                           <>
-                            {message.image_url && (
+                            {isSafeHttpsUrl(message.image_url) && (
                               <img
                                 src={message.image_url}
                                 alt="Uploaded image"

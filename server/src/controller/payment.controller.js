@@ -28,7 +28,8 @@ export const createOrderController = async (req, res) => {
     }
 
     const plan = typeof req.body?.plan === "object" ? req.body.plan.id : req.body?.plan;
-    const selectedPlan = Plans[plan];
+    const selectedPlan =
+      typeof plan === "string" && Object.hasOwn(Plans, plan) ? Plans[plan] : null;
 
     if (!selectedPlan) {
       return res.status(400).json({
@@ -143,15 +144,37 @@ export const verifyPaymentController = async (req, res) => {
       });
     }
 
-    payment.status = "paid";
-    payment.razorpayPaymentId = razorpay_payment_id;
-    await payment.save();
+    // Atomically transition status from "created" to "paid" to prevent double-credit race conditions
+    const updatedPayment = await paymentModel.findOneAndUpdate(
+      {
+        userId,
+        razorpayOrderId: razorpay_order_id,
+        status: "created",
+      },
+      {
+        $set: {
+          status: "paid",
+          razorpayPaymentId: razorpay_payment_id,
+        },
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (!updatedPayment) {
+      return res.status(200).json({
+        success: true,
+        message: "Payment already verified.",
+        credits: req.user?.credits,
+      });
+    }
 
     const updatedUser = await userModel.findByIdAndUpdate(
       userId,
       {
         $inc: {
-          credits: payment.credits,
+          credits: updatedPayment.credits,
         },
       },
       {

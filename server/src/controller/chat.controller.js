@@ -4,6 +4,18 @@ import workFlow from "../utils/chatGraph.js";
 import agentModel from "../model/agent.model.js";
 import { createAgentGraph } from "../utils/agentGraph.js";
 import { deductCredits } from "../utils/deductCredits.js";
+import { isSafeCloudinaryImageUrl } from "../utils/validateImageUrl.js";
+
+const buildUserThreadId = (userId, clientThreadId, suffix = "default") => {
+  const uid = String(userId);
+  if (
+    typeof clientThreadId === "string" &&
+    clientThreadId.startsWith(`${uid}:`)
+  ) {
+    return clientThreadId;
+  }
+  return `${uid}:${suffix}`;
+};
 
 export const chatController = async (req, res) => {
   try {
@@ -16,6 +28,12 @@ export const chatController = async (req, res) => {
 
     if (!text && !imageUrl) {
       return res.status(400).json({ message: "Message required" });
+    }
+
+    if (imageUrl && !isSafeCloudinaryImageUrl(imageUrl)) {
+      return res
+        .status(400)
+        .json({ message: "Image URL must be a valid HTTPS Cloudinary URL" });
     }
 
     const messageContent = imageUrl
@@ -32,7 +50,7 @@ export const chatController = async (req, res) => {
       );
 
     let graphToInvoke = workFlow;
-    let threadId = clientThreadId || req.user._id.toString();
+    let threadId = buildUserThreadId(req.user._id, clientThreadId, "chat");
 
     // Verify user has sufficient credits before executing LLM
     if (req.user && typeof req.user.credits === "number" && req.user.credits < 2) {
@@ -49,9 +67,11 @@ export const chatController = async (req, res) => {
           "You are Automate AI, a helpful personal assistant with web search, Gmail, Google Calendar, and Instagram publishing capabilities.",
       };
       graphToInvoke = await createAgentGraph(agentConfig, req.user._id);
-      threadId =
-        clientThreadId ||
-        `${req.user._id.toString()}:${agentConfig._id || "default"}`;
+      threadId = buildUserThreadId(
+        req.user._id,
+        clientThreadId,
+        String(agentConfig._id || "default"),
+      );
     }
 
     const data = await graphToInvoke.invoke(
@@ -114,8 +134,16 @@ export const agentChatController = async (req, res) => {
     if (!text && !imageUrl) {
       return res.status(400).json({ message: "Message required" });
     }
+    if (typeof agent !== "string" || !agent.trim()) {
+      return res.status(400).json({ message: "Valid agent name is required" });
+    }
+    if (imageUrl && !isSafeCloudinaryImageUrl(imageUrl)) {
+      return res
+        .status(400)
+        .json({ message: "Image URL must be a valid HTTPS Cloudinary URL" });
+    }
     const existingAgent = await agentModel.findOne({
-      name: agent,
+      name: agent.trim(),
       userId: req.user._id,
     });
 
@@ -138,8 +166,11 @@ export const agentChatController = async (req, res) => {
         : `Attached image URL: ${imageUrl}`
       : text;
 
-    const threadId =
-      clientThreadId || `${req.user._id.toString()}:${existingAgent._id}`;
+    const threadId = buildUserThreadId(
+      req.user._id,
+      clientThreadId,
+      String(existingAgent._id),
+    );
 
     const graph = await createAgentGraph(existingAgent, req.user._id);
 
@@ -195,10 +226,15 @@ export const agentChatController = async (req, res) => {
 
 export const resumeChatController = async (req, res) => {
   try {
-    const { threadId, decision, agent } = req.body;
-    if (!threadId) {
+    const { threadId: rawThreadId, decision, agent } = req.body;
+    if (typeof rawThreadId !== "string" || !rawThreadId.trim()) {
       return res.status(400).json({ message: "threadId is required" });
     }
+    const uid = String(req.user._id);
+    if (!rawThreadId.startsWith(`${uid}:`)) {
+      return res.status(403).json({ message: "Forbidden: Invalid thread ownership" });
+    }
+    const threadId = rawThreadId;
 
     // Verify user has sufficient credits before executing tool resume
     if (req.user && typeof req.user.credits === "number" && req.user.credits < 10) {
@@ -209,8 +245,11 @@ export const resumeChatController = async (req, res) => {
 
     let graphToInvoke;
     if (agent) {
+      if (typeof agent !== "string" || !agent.trim()) {
+        return res.status(400).json({ message: "Valid agent name is required" });
+      }
       const existingAgent = await agentModel.findOne({
-        name: agent,
+        name: agent.trim(),
         userId: req.user._id,
       });
       if (!existingAgent) {

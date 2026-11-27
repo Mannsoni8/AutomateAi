@@ -4,6 +4,7 @@ import agentModel from "../src/model/agent.model.js";
 import {
   createAgentController,
   getAgentsController,
+  getAgentByIdController,
   deleteAgentController,
 } from "../src/controller/agent.controller.js";
 
@@ -135,5 +136,32 @@ describe("Agent Management Integration Tests", () => {
     await createAgentController(invalidReq, res);
     assert.equal(res.statusCode, 400);
     assert.equal(res.body.message, "All fields are required");
+  });
+
+  it("prevents IDOR: rejects reading another user's agent by ID", async () => {
+    const originalFindOne = agentModel.findOne;
+    try {
+      agentModel.findOne = (query) => ({
+        populate: async () => {
+          // Only return if userId matches owner
+          if (query._id === "agent_owner_1" && query.userId === "usr_owner") {
+            return { _id: "agent_owner_1", userId: "usr_owner", name: "Secret Agent" };
+          }
+          return null;
+        },
+      });
+
+      const attackerReq = {
+        user: { _id: "usr_attacker" },
+        params: { id: "agent_owner_1" },
+      };
+      const res = createMockRes();
+
+      await getAgentByIdController(attackerReq, res);
+      assert.equal(res.statusCode, 404);
+      assert.equal(res.body.message, "Agent not found");
+    } finally {
+      agentModel.findOne = originalFindOne;
+    }
   });
 });

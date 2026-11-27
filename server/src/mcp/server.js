@@ -24,6 +24,7 @@ import {
 import axios from "axios";
 import { HumanMessage } from "@langchain/core/messages";
 import { ChatGoogle } from "@langchain/google";
+import { assertSafePublicHttpsUrl } from "../utils/validateImageUrl.js";
 
 const GEMINI_MODELS = [
   "gemini-3.8-flash",
@@ -792,7 +793,8 @@ IMPORTANT:
   },
   async ({ imageUrl, prompt }) => {
     try {
-      const imageResponse = await fetch(imageUrl, {
+      const safeUrl = assertSafePublicHttpsUrl(imageUrl);
+      const imageResponse = await fetch(safeUrl, {
         signal: AbortSignal.timeout(15000),
       });
 

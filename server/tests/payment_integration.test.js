@@ -37,6 +37,7 @@ describe("End-to-End Payment & Credit Top-Up Integration Tests", () => {
 
     const originalCreate = paymentModel.create;
     const originalFindOne = paymentModel.findOne;
+    const originalFindOneAndUpdate = paymentModel.findOneAndUpdate;
     const originalFindByIdAndUpdate = userModel.findByIdAndUpdate;
     const originalSecret = config.RAZORPAY_KEY_SECRET;
     const originalKeyId = config.RAZORPAY_KEY_ID;
@@ -72,6 +73,14 @@ describe("End-to-End Payment & Credit Top-Up Integration Tests", () => {
 
       paymentModel.findOne = async (query) => {
         return paymentStore.get(query.razorpayOrderId) || null;
+      };
+
+      paymentModel.findOneAndUpdate = async (filter, update) => {
+        const record = paymentStore.get(filter.razorpayOrderId);
+        if (!record || record.status !== filter.status) return null;
+        record.status = update.$set.status;
+        record.razorpayPaymentId = update.$set.razorpayPaymentId;
+        return record;
       };
 
       userModel.findByIdAndUpdate = async (id, update) => {
@@ -145,6 +154,7 @@ describe("End-to-End Payment & Credit Top-Up Integration Tests", () => {
     } finally {
       paymentModel.create = originalCreate;
       paymentModel.findOne = originalFindOne;
+      paymentModel.findOneAndUpdate = originalFindOneAndUpdate;
       userModel.findByIdAndUpdate = originalFindByIdAndUpdate;
       config.RAZORPAY_KEY_SECRET = originalSecret;
       config.RAZORPAY_KEY_ID = originalKeyId;

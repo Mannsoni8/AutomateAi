@@ -2,6 +2,9 @@ import mongoose from "mongoose";
 import dns from "node:dns";
 import { config } from "./env.js";
 
+// Prevent MongoDB query operator injection (e.g. $ne, $gt in filter objects)
+mongoose.set("sanitizeFilter", true);
+
 // Use public DNS resolvers to prevent ECONNREFUSED on MongoDB SRV record lookups
 try {
   dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);

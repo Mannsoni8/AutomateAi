@@ -11,8 +11,15 @@ import paymentRouter from "./src/routers/payment.route.js";
 
 const app = express();
 
+app.disable("x-powered-by");
 app.set("trust proxy", 1);
-app.use(express.json());
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
+app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 const allowedOrigins = (config.FRONTED_URL || "")
